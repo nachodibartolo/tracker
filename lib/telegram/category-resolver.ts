@@ -72,6 +72,7 @@ export async function resolveCategory(
   userId: string,
   type: "expense" | "income",
   hint: string | null,
+  subHint?: string | null,
 ): Promise<ResolvedCategory> {
   const { data, error } = await supabase
     .from("categories")
@@ -80,8 +81,6 @@ export async function resolveCategory(
     .eq("type", type);
 
   if (error || !data || data.length === 0) {
-    // Nothing to match against; the caller will store the row with
-    // category_id = null.
     return { id: null, label: "Sin categoría" };
   }
 
@@ -89,40 +88,52 @@ export async function resolveCategory(
   const byId = new Map<string, CategoryRow>();
   for (const r of rows) byId.set(r.id, r);
 
-  // 1. Exact (normalised) name match.
+  // Resolve top-level first (existing logic). If the hint maps to a sub
+  // directly (rare; the AI normally picks top-level), we still return it.
+  let resolved: CategoryRow | undefined;
+
   if (hint) {
     const h = normalise(hint);
-    const exact = rows.find((r) => normalise(r.name) === h);
-    if (exact) {
-      return { id: exact.id, label: labelFor(exact, byId) };
-    }
-    // 2. Substring match — "comida" matches "Comida rápida", and "Educación"
-    //    matches the hint "educacion" via normalise().
-    const partial = rows.find((r) => {
-      const n = normalise(r.name);
-      return n.includes(h) || h.includes(n);
-    });
-    if (partial) {
-      return { id: partial.id, label: labelFor(partial, byId) };
+    resolved = rows.find((r) => normalise(r.name) === h);
+    if (!resolved) {
+      resolved = rows.find((r) => {
+        const n = normalise(r.name);
+        return n.includes(h) || h.includes(n);
+      });
     }
   }
 
-  // 3. Seeded fallback.
-  const fallback = rows.find(
-    (r) => normalise(r.name) === normalise(fallbackName(type)),
-  );
-  if (fallback) {
-    return { id: fallback.id, label: labelFor(fallback, byId) };
+  if (!resolved) {
+    resolved = rows.find(
+      (r) => normalise(r.name) === normalise(fallbackName(type)),
+    );
   }
 
-  // 4. As a last resort, pick the first top-level category for this type so
-  //    the transaction is at least categorised. Stable order is guaranteed
-  //    only loosely (no `order by` above), but for a degraded fallback it's
-  //    acceptable.
-  const anyTop = rows.find((r) => r.parent_id === null) ?? rows[0];
-  if (anyTop) {
-    return { id: anyTop.id, label: labelFor(anyTop, byId) };
+  if (!resolved) {
+    resolved = rows.find((r) => r.parent_id === null) ?? rows[0];
   }
 
-  return { id: null, label: "Sin categoría" };
+  if (!resolved) {
+    return { id: null, label: "Sin categoría" };
+  }
+
+  // If we have a sub-hint and the resolved top-level has children, try to
+  // refine. Same exact/substring matching as the top-level pass, scoped to
+  // the children of `resolved`.
+  if (subHint && resolved.parent_id === null) {
+    const sub = normalise(subHint);
+    const children = rows.filter((r) => r.parent_id === resolved!.id);
+    let subMatch = children.find((c) => normalise(c.name) === sub);
+    if (!subMatch) {
+      subMatch = children.find((c) => {
+        const n = normalise(c.name);
+        return n.includes(sub) || sub.includes(n);
+      });
+    }
+    if (subMatch) {
+      return { id: subMatch.id, label: labelFor(subMatch, byId) };
+    }
+  }
+
+  return { id: resolved.id, label: labelFor(resolved, byId) };
 }
