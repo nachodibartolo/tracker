@@ -3,7 +3,9 @@ import { generateObject } from "ai";
 import { geminiFlash, requireGoogleAi } from "./provider";
 import {
   CATEGORY_HINTS,
-  ExpenseExtractionSchema,
+  ExpenseBatchExtractionSchema,
+  type ExpenseBatchExtraction,
+  type ExpenseItem,
   type ExpenseExtraction,
 } from "./schemas";
 
@@ -92,70 +94,129 @@ function baseSchemaInstructions(defaultCurrency: string): string {
   return [
     "Devolvé SIEMPRE un objeto JSON que matchee el schema provisto. No agregues campos extra.",
     `Default currency: ${defaultCurrency}. Si no se menciona explícitamente otra moneda, usá '${defaultCurrency}'.`,
-    "El campo 'amount' debe ser positivo aunque sea un gasto. El signo lo determina 'type'.",
+    "Los 'amount' deben ser positivos aunque sean gastos. El signo lo determina 'type'.",
     `Los slugs válidos para 'category_hint' son exactamente: ${CATEGORY_LIST}. Usá null si ninguno aplica.`,
+    "'subcategory_hint' es texto libre: una sola palabra/frase en minúsculas (ej: 'café', 'supermercado', 'comida rápida'). null si no se puede afinar.",
     "Si la fecha no aparece explícita, devolvé 'occurred_at' = null (el sistema usará 'ahora').",
-    "'confidence' debe reflejar honestamente qué tan segura está la extracción (0 = adivinanza, 1 = totalmente claro).",
-    "Si el input no parece un gasto/ingreso o no se puede interpretar, devolvé type='unknown' y los campos que no sepas en null.",
-  ].join(" ");
+    "Si solo hay fecha sin hora (típico bank statement DD/MM/AA), devolvé 'occurred_at' con hora 12:00:00-03:00.",
+    "'confidence' refleja qué tan segura está la extracción (0 = adivinanza, 1 = totalmente claro).",
+    "Si el input no parece un gasto/ingreso, devolvé items=[] y source_kind='unknown'.",
+    "",
+    "transfer_hint: marcalo true SOLO si el concepto contiene alguno de estos patrones (matching case-insensitive, accent-insensitive); en cualquier otro caso, marcalo false:",
+    INTERNAL_TRANSFER_HINTS.map((h) => `  - ${h}`).join("\n"),
+    "",
+    "Normalización de payees argentinos:",
+    ARGENTINE_PAYEES.trim(),
+    "",
+    "Si no matchea ningún payee conocido: limpiá prefijos (CPA., DEB, números) y dejá el resto como payee.",
+    "",
+    currentDateLine(),
+  ].join("\n");
+}
+
+function batchInstructions(): string {
+  return [
+    "Detectá primero source_kind:",
+    "  - receipt: foto de ticket/recibo con UN total final → items con 1 elemento.",
+    "  - bank_statement: tabla con columnas Fecha/Concepto/Débitos/Créditos → items por cada fila con monto.",
+    "  - wallet_app_feed: feed estilo Mercado Pago/Modo/Ualá con avatares por movimiento → items por cada movimiento listado.",
+    "  - free_text: texto narrando uno o más gastos → items por cada gasto/ingreso mencionado.",
+    "  - unknown: nada de lo anterior → items=[].",
+    "",
+    "Anti-alucinación:",
+    "  - No inventes filas. Si una fila no tiene débito ni crédito visibles, omitila.",
+    "  - Si el screenshot está cortado y la última fila parece incompleta, omitila.",
+    "  - No extraigas balances (Saldo) como movimientos.",
+    "  - El número de items DEBE coincidir con lo que se ve en pantalla.",
+  ].join("\n");
 }
 
 /**
- * Extract structured expense data from a free-text message (Telegram, web
- * form, etc.). Rioplatense Spanish prompt.
+ * Wrapper thin: delega en `extractBatchFromText` y devuelve el primer item
+ * para mantener compatibilidad con código que esperaba un solo movimiento.
  */
 export async function extractFromText(
   text: string,
   defaultCurrency: string,
 ): Promise<ExpenseExtraction> {
-  requireGoogleAi();
-
-  const system = [
-    "Sos un extractor de gastos personales para un argentino. Recibís texto libre en español rioplatense (ej: '150 cafe en Starbucks', 'pagué 12.500 de luz a Edesur', 'me entraron 800 USD de freelance').",
-    "Tu tarea es identificar si es un gasto, un ingreso o algo desconocido, y completar todos los campos del schema con la mejor inferencia posible.",
-    "Ejemplos:",
-    "- '150 cafe en Starbucks' => {type:'expense', amount:150, currency:default, payee:'Starbucks', description:'cafe', category_hint:'comida', occurred_at:null, confidence:0.85}",
-    "- 'pagué 12.500 de luz a Edesur' => {type:'expense', amount:12500, currency:default, payee:'Edesur', description:'luz', category_hint:'servicios', occurred_at:null, confidence:0.9}",
-    "- 'me entraron 800 USD de freelance' => {type:'income', amount:800, currency:'USD', payee:null, description:'freelance', category_hint:'freelance', occurred_at:null, confidence:0.85}",
-    baseSchemaInstructions(defaultCurrency),
-  ].join("\n");
-
-  try {
-    const { object } = await generateObject({
-      model: geminiFlash,
-      schema: ExpenseExtractionSchema,
-      system,
-      prompt: text,
-      temperature: 0.2,
-    });
-    return object;
-  } catch (err) {
-    throw new AiExtractionError(
-      "text",
-      err instanceof Error ? err.message : "Failed to extract expense from text",
-      { cause: err },
-    );
-  }
+  const batch = await extractBatchFromText(text, defaultCurrency);
+  return batch.items[0] ?? UNKNOWN_ITEM;
 }
 
 /**
- * Extract structured expense data from a photo of a ticket/receipt.
+ * Wrapper thin: delega en `extractBatchFromImage` y devuelve el primer item.
  */
 export async function extractFromImage(
   image: BinaryInput,
   defaultCurrency: string,
 ): Promise<ExpenseExtraction> {
+  const batch = await extractBatchFromImage(image, defaultCurrency);
+  return batch.items[0] ?? UNKNOWN_ITEM;
+}
+
+/**
+ * Wrapper thin: delega en `extractBatchFromAudio` y devuelve el primer item.
+ */
+export async function extractFromAudio(
+  audio: BinaryInput,
+  defaultCurrency: string,
+): Promise<ExpenseExtraction> {
+  const batch = await extractBatchFromAudio(audio, defaultCurrency);
+  return batch.items[0] ?? UNKNOWN_ITEM;
+}
+
+// =============================================================================
+// Batch extractors — return ExpenseBatchExtraction with N items.
+// =============================================================================
+
+export async function extractBatchFromText(
+  text: string,
+  defaultCurrency: string,
+): Promise<ExpenseBatchExtraction> {
   requireGoogleAi();
 
   const system = [
-    "Recibís fotos de tickets/recibos en español. Extraé el total final pagado (no subtotales), el comercio, la fecha si está visible. Si el total tiene IVA incluido tomalo. Si no se ve un total claro, devolvé type='unknown'.",
+    "Sos un extractor de gastos personales para un argentino. Recibís texto libre en español rioplatense que puede contener UN gasto o VARIOS (ej: 'gasté 200 en café y 1500 en uber, y cobré 80k de freelance').",
+    "Extraé TODOS los movimientos mencionados. Cada uno es un item del array.",
+    batchInstructions(),
     baseSchemaInstructions(defaultCurrency),
   ].join("\n");
 
   try {
     const { object } = await generateObject({
       model: geminiFlash,
-      schema: ExpenseExtractionSchema,
+      schema: ExpenseBatchExtractionSchema,
+      system,
+      prompt: text,
+      temperature: 0,
+    });
+    return object;
+  } catch (err) {
+    throw new AiExtractionError(
+      "text",
+      err instanceof Error ? err.message : "Failed to extract batch from text",
+      { cause: err },
+    );
+  }
+}
+
+export async function extractBatchFromImage(
+  image: BinaryInput,
+  defaultCurrency: string,
+): Promise<ExpenseBatchExtraction> {
+  requireGoogleAi();
+
+  const system = [
+    "Recibís una imagen que puede ser: un ticket/recibo (UN movimiento), una tabla de homebanking (varias filas con Fecha/Concepto/Débitos/Créditos), o un feed de billetera virtual estilo Mercado Pago/Modo/Ualá (lista de actividades por día).",
+    "Identificá qué tipo de imagen es (source_kind) y extraé TODOS los movimientos que aparecen.",
+    batchInstructions(),
+    baseSchemaInstructions(defaultCurrency),
+  ].join("\n");
+
+  try {
+    const { object } = await generateObject({
+      model: geminiFlash,
+      schema: ExpenseBatchExtractionSchema,
       system,
       messages: [
         {
@@ -175,30 +236,29 @@ export async function extractFromImage(
   } catch (err) {
     throw new AiExtractionError(
       "image",
-      err instanceof Error ? err.message : "Failed to extract expense from image",
+      err instanceof Error ? err.message : "Failed to extract batch from image",
       { cause: err },
     );
   }
 }
 
-/**
- * Extract structured expense data from a short voice note (Telegram audio).
- */
-export async function extractFromAudio(
+export async function extractBatchFromAudio(
   audio: BinaryInput,
   defaultCurrency: string,
-): Promise<ExpenseExtraction> {
+): Promise<ExpenseBatchExtraction> {
   requireGoogleAi();
 
   const system = [
-    "Recibís audios cortos en español rioplatense narrando un gasto. Transcribí mentalmente y extraé los datos.",
+    "Recibís audios cortos en español rioplatense narrando uno o más gastos.",
+    "Transcribí mentalmente y extraé cada movimiento mencionado.",
+    batchInstructions(),
     baseSchemaInstructions(defaultCurrency),
   ].join("\n");
 
   try {
     const { object } = await generateObject({
       model: geminiFlash,
-      schema: ExpenseExtractionSchema,
+      schema: ExpenseBatchExtractionSchema,
       system,
       messages: [
         {
@@ -212,14 +272,28 @@ export async function extractFromAudio(
           ],
         },
       ],
-      temperature: 0.2,
+      temperature: 0,
     });
     return object;
   } catch (err) {
     throw new AiExtractionError(
       "audio",
-      err instanceof Error ? err.message : "Failed to extract expense from audio",
+      err instanceof Error ? err.message : "Failed to extract batch from audio",
       { cause: err },
     );
   }
 }
+
+const UNKNOWN_ITEM: ExpenseItem = {
+  type: "unknown",
+  amount: null,
+  currency: null,
+  payee: null,
+  description: null,
+  category_hint: null,
+  subcategory_hint: null,
+  occurred_at: null,
+  transfer_hint: false,
+  external_id: null,
+  confidence: 0,
+};
