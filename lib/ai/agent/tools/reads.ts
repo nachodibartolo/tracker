@@ -237,6 +237,7 @@ export function getSpendByCategoryTool(ctx: ReadCtx) {
         const { data: cats } = await ctx.supabase
           .from("categories")
           .select("id, name")
+          .eq("user_id", ctx.userId)
           .in("id", catIds);
         for (const c of cats ?? []) names.set(c.id, c.name);
       }
