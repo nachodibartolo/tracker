@@ -19,7 +19,7 @@
 
 import { after } from "next/server";
 
-import { bot, registerHandlers } from "@/lib/telegram/bot";
+import { bot, ensureBotReady, registerHandlers } from "@/lib/telegram/bot";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import type { Update } from "grammy/types";
@@ -84,6 +84,7 @@ export async function POST(req: Request): Promise<Response> {
 
   after(async () => {
     try {
+      await ensureBotReady();
       await bot.handleUpdate(update);
     } catch (err) {
       console.error("[telegram/webhook] handler error", err);

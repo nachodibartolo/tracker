@@ -31,6 +31,25 @@ export function registerHandlers(): void {
   __registered = true;
 }
 
+let __initPromise: Promise<void> | null = null;
+
+/**
+ * Ensures the bot has called `getMe` once so `bot.handleUpdate()` works.
+ * `webhookCallback` does this implicitly; we have to do it ourselves when
+ * we hand updates to the bot directly. Cached per cold-start instance.
+ */
+export function ensureBotReady(): Promise<void> {
+  if (!__initPromise) {
+    __initPromise = bot.init().catch((err) => {
+      // Reset on failure so the next request retries instead of permanently
+      // returning a rejected promise.
+      __initPromise = null;
+      throw err;
+    });
+  }
+  return __initPromise;
+}
+
 // Friendly error logging — Telegram retries failed webhooks, and silent errors
 // would be hard to debug. We never throw out of a handler.
 bot.catch((err) => {
