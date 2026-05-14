@@ -92,6 +92,10 @@ async function handleWalletPick(
     return;
   }
   const [, batchId, walletId] = parts;
+  if (!batchId || !walletId) {
+    await ctx.answerCallbackQuery({ text: ERROR_TEXT });
+    return;
+  }
   const chatId = ctx.chat!.id;
 
   const rows = await loadBatch(supabase, batchId, chatId);
@@ -119,6 +123,18 @@ async function handleCancel(
   data: string,
 ): Promise<void> {
   const batchId = data.split(":")[1];
+  if (!batchId) {
+    await ctx.answerCallbackQuery({ text: ERROR_TEXT });
+    return;
+  }
+  const chatId = ctx.chat!.id;
+  // Ownership check — loadBatch filters by telegram_chat_id, so an
+  // empty result means this chat doesn't own this batch (or it's gone).
+  const rows = await loadBatch(supabase, batchId, chatId);
+  if (rows.length === 0) {
+    await ctx.answerCallbackQuery({ text: NOT_FOUND_TEXT });
+    return;
+  }
   await deleteBatch(supabase, batchId);
   await ctx.answerCallbackQuery({ text: "Cancelado" });
   try {
@@ -149,6 +165,12 @@ async function handleConfirm(
     (r) => !r.excluded && (includeDuplicates || !r.is_duplicate),
   );
 
+  // Delete BEFORE persisting to make the operation idempotent under
+  // double-taps. A second concurrent tap will see loadBatch=[] and exit.
+  // The downside (partial persist losing the unwritten pending rows on
+  // failure) is acceptable for personal-scale; duplicate writes are worse.
+  await deleteBatch(supabase, batchId);
+
   let persisted = 0;
   let failed = 0;
 
@@ -163,8 +185,6 @@ async function handleConfirm(
       else failed++;
     }
   }
-
-  await deleteBatch(supabase, batchId);
 
   const excludedCount = rows.filter((r) => r.excluded).length;
   const skippedDupCount = !includeDuplicates ? rows.filter((r) => r.is_duplicate && !r.excluded).length : 0;
