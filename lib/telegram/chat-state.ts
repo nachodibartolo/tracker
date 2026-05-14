@@ -21,7 +21,7 @@ export async function setAwaitingMode(
   chatId: number,
   mode: ChatStateMode,
   batchId: string,
-): Promise<void> {
+): Promise<boolean> {
   const expires = new Date(Date.now() + TTL_MINUTES * 60 * 1000).toISOString();
   const payload: TablesInsert<"telegram_chat_state"> =
     mode === "exclude"
@@ -45,7 +45,9 @@ export async function setAwaitingMode(
     .upsert(payload, { onConflict: "telegram_chat_id" });
   if (error) {
     console.error("[telegram/chat-state] upsert failed", error);
+    return false;
   }
+  return true;
 }
 
 export async function getActiveAwaiting(
