@@ -43,7 +43,12 @@ export interface PromptContext {
   todayYearAr: string;
 }
 
-export function currentDateContext(): PromptContext {
+export interface DateContext {
+  todayIso: string;
+  todayYearAr: string;
+}
+
+export function currentDateContext(): DateContext {
   const now = new Date();
   const yearAr = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Argentina/Buenos_Aires",
@@ -51,7 +56,6 @@ export function currentDateContext(): PromptContext {
     .format(now)
     .slice(0, 4);
   return {
-    mainCurrency: "ARS",
     todayIso: now.toISOString(),
     todayYearAr: yearAr,
   };
