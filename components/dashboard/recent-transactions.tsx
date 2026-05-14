@@ -10,16 +10,26 @@ import { cn } from "@/lib/utils";
 interface RecentTransactionsProps {
   rows: TransactionWithRefs[];
   className?: string;
+  /**
+   * Destination for the "Ver todas" link. Defaults to `/transactions`; the
+   * wallet detail page overrides it to scope the list to a single wallet.
+   */
+  seeAllHref?: string;
 }
 
 /**
- * Last 10 transactions surfaced on the dashboard.
+ * Last 10 transactions surfaced on the dashboard (and the wallet detail
+ * screen, scoped to a single wallet via `seeAllHref`).
  *
  * Reuses the same `<TransactionRow>` as `/transactions` so the swipe / menu
  * affordances stay consistent — but renders without the day-grouping
  * headers because a 10-row strip doesn't benefit from them.
  */
-export function RecentTransactions({ rows, className }: RecentTransactionsProps) {
+export function RecentTransactions({
+  rows,
+  className,
+  seeAllHref = "/transactions",
+}: RecentTransactionsProps) {
   return (
     <Card size="sm" className={className}>
       <div className="flex flex-col gap-2 px-4 py-4 md:px-5">
@@ -29,7 +39,7 @@ export function RecentTransactions({ rows, className }: RecentTransactionsProps)
           </h2>
           {rows.length > 0 ? (
             <Link
-              href="/transactions"
+              href={seeAllHref}
               className={cn(
                 "inline-flex items-center gap-1 text-xs font-medium text-primary",
                 "hover:underline underline-offset-2",

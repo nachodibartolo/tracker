@@ -3,17 +3,21 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "@phosphor-icons/react/dist/ssr";
 
+import { RecentTransactions } from "@/components/dashboard/recent-transactions";
 import { MobileHeader } from "@/components/shared/mobile-header";
 import { WalletActionsMenu } from "@/components/wallets/wallet-actions-menu";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { listTransactions } from "@/lib/domain/transactions";
 import { getWalletById } from "@/lib/domain/wallets";
 import { formatCurrency } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 import { getWalletIcon } from "@/lib/wallet-icons";
+
+const RECENT_TX_LIMIT = 10;
 
 export const metadata: Metadata = {
   title: t.nav.wallets,
@@ -41,12 +45,19 @@ export default async function WalletDetailPage({ params }: PageProps) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const item = await getWalletById(supabase, id, user.id);
+  // Fetch wallet metadata and recent transactions in parallel — both queries
+  // are RLS-scoped to `user.id`, so the transactions query is wasted only on
+  // the rare 404 path (wallet missing or belongs to another user).
+  const [item, recentResult] = await Promise.all([
+    getWalletById(supabase, id, user.id),
+    listTransactions(supabase, user.id, { walletId: id }, 0),
+  ]);
   if (!item) notFound();
 
   const { wallet, balance } = item;
   const Icon = getWalletIcon(wallet.icon);
   const showInitialHint = Number(wallet.initial_balance) !== balance;
+  const recentTransactions = recentResult.rows.slice(0, RECENT_TX_LIMIT);
 
   return (
     <>
@@ -124,17 +135,11 @@ export default async function WalletDetailPage({ params }: PageProps) {
           </div>
         </Card>
 
-        {/* Placeholder: Wave 3 fills this with the wallet's transactions. */}
-        <section className="mt-6">
-          <h2 className="font-heading text-lg font-medium">
-            Transacciones de esta wallet
-          </h2>
-          <div className="mt-3 rounded-2xl border border-dashed border-border bg-card/30 px-6 py-10 text-center">
-            <p className="text-sm text-muted-foreground">
-              Próximamente vas a ver acá los últimos movimientos. (Wave 3)
-            </p>
-          </div>
-        </section>
+        <RecentTransactions
+          className="mt-6"
+          rows={recentTransactions}
+          seeAllHref={`/transactions?walletId=${wallet.id}`}
+        />
       </div>
     </>
   );
