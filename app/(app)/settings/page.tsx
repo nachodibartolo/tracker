@@ -158,6 +158,26 @@ export default async function SettingsPage() {
             </CardContent>
           </Card>
 
+          {/* --- Voz (Siri) --- */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Voz (Siri)</CardTitle>
+              <CardDescription>
+                Configurar Atajos de iOS para agregar gastos por voz.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Gestioná los tokens de acceso para el Atajo de Siri.
+                </p>
+                <Button size="sm" render={<Link href="/settings/voice" />}>
+                  Configurar
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* --- Apariencia --- */}
           <Card>
             <CardHeader>
