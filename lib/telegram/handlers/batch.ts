@@ -137,10 +137,158 @@ async function handleConfirm(
   data: string,
   includeDuplicates: boolean,
 ): Promise<void> {
-  void supabase;
-  void data;
-  void includeDuplicates;
-  await ctx.answerCallbackQuery({ text: "Próximamente" });
+  const batchId = data.split(":")[1];
+  const chatId = ctx.chat!.id;
+  const rows = await loadBatch(supabase, batchId, chatId);
+  if (rows.length === 0) {
+    await ctx.answerCallbackQuery({ text: NOT_FOUND_TEXT });
+    return;
+  }
+
+  const toPersist = rows.filter(
+    (r) => !r.excluded && (includeDuplicates || !r.is_duplicate),
+  );
+
+  let persisted = 0;
+  let failed = 0;
+
+  for (const row of toPersist) {
+    if (row.counterpart_wallet_id && row.suggested_wallet_id) {
+      const ok = await persistTransfer(supabase, row);
+      if (ok) persisted++;
+      else failed++;
+    } else {
+      const ok = await persistExpenseIncome(supabase, row);
+      if (ok) persisted++;
+      else failed++;
+    }
+  }
+
+  await deleteBatch(supabase, batchId);
+
+  const excludedCount = rows.filter((r) => r.excluded).length;
+  const skippedDupCount = !includeDuplicates ? rows.filter((r) => r.is_duplicate && !r.excluded).length : 0;
+  const failureNote = failed > 0 ? `\n   ⚠️ ${failed} fallaron` : "";
+
+  try {
+    await ctx.editMessageText(
+      `✅ ${persisted} movimientos guardados\n   ❌ ${skippedDupCount} duplicados omitidos\n   ↩️ ${excludedCount} excluidos por vos${failureNote}`,
+    );
+  } catch (err) {
+    console.error("[telegram/batch] edit after confirm failed", err);
+  }
+  await ctx.answerCallbackQuery({ text: "Listo" });
+}
+
+async function persistExpenseIncome(
+  supabase: ReturnType<typeof createAdminClient>,
+  row: import("@/lib/telegram/pending-batch").BatchPendingRow,
+): Promise<boolean> {
+  const ex = row.extraction;
+  if (ex.type !== "expense" && ex.type !== "income") return false;
+  if (!ex.amount || ex.amount <= 0) return false;
+  if (!row.suggested_wallet_id) return false;
+
+  const { data: wallet } = await supabase
+    .from("wallets")
+    .select("id, currency, archived")
+    .eq("id", row.suggested_wallet_id)
+    .maybeSingle();
+  if (!wallet || wallet.archived) return false;
+
+  const occurred = ex.occurred_at ? new Date(ex.occurred_at) : new Date();
+
+  const { error } = await supabase.from("transactions").insert({
+    user_id: row.user_id,
+    wallet_id: wallet.id,
+    category_id: row.suggested_category_id,
+    type: ex.type,
+    amount: ex.amount,
+    currency: wallet.currency,
+    occurred_at: occurred.toISOString(),
+    description: ex.description ?? null,
+    payee: ex.payee ?? null,
+    photo_path: row.photo_path,
+    source: row.source,
+    source_metadata: { ai: ex, batch_id: row.id },
+  });
+  if (error) {
+    console.error("[telegram/batch] tx insert failed", error);
+    return false;
+  }
+  return true;
+}
+
+async function persistTransfer(
+  supabase: ReturnType<typeof createAdminClient>,
+  row: import("@/lib/telegram/pending-batch").BatchPendingRow,
+): Promise<boolean> {
+  const ex = row.extraction;
+  if (!ex.amount || ex.amount <= 0) return false;
+  if (!row.suggested_wallet_id || !row.counterpart_wallet_id) return false;
+
+  // Direction: expense → out of suggested wallet, into counterpart.
+  //             income  → into suggested wallet, out of counterpart.
+  const fromId = ex.type === "expense" ? row.suggested_wallet_id : row.counterpart_wallet_id;
+  const toId = ex.type === "expense" ? row.counterpart_wallet_id : row.suggested_wallet_id;
+
+  // Re-validate both wallets at confirm time. The counterpart FK is
+  // ON DELETE SET NULL, but pending rows may also reference wallets that
+  // got archived between marking and confirm. Either case → fall back to
+  // expense/income persistence.
+  const { data: wallets } = await supabase
+    .from("wallets")
+    .select("id, currency, archived")
+    .in("id", [fromId, toId]);
+  const fromW = wallets?.find((w) => w.id === fromId);
+  const toW = wallets?.find((w) => w.id === toId);
+  if (!fromW || !toW || fromW.archived || toW.archived) {
+    return persistExpenseIncome(supabase, row);
+  }
+
+  const sameCurrency = fromW.currency.toUpperCase() === toW.currency.toUpperCase();
+  if (!sameCurrency) {
+    // Different currencies require an FX rate we don't have at this layer.
+    // Fall back to plain expense/income persistence so wallets stay in sync.
+    return persistExpenseIncome(supabase, row);
+  }
+
+  const occurred = ex.occurred_at ? new Date(ex.occurred_at) : new Date();
+
+  const { error } = await (
+    supabase.rpc as unknown as (
+      fn: "create_transfer",
+      args: {
+        p_user_id: string;
+        p_from_wallet: string;
+        p_to_wallet: string;
+        p_amount_from: number;
+        p_amount_to: number;
+        p_currency_from: string;
+        p_currency_to: string;
+        p_fx_rate: number;
+        p_occurred_at: string;
+        p_note: string | null;
+      },
+    ) => Promise<{ data: string | null; error: { message?: string } | null }>
+  )("create_transfer", {
+    p_user_id: row.user_id,
+    p_from_wallet: fromId,
+    p_to_wallet: toId,
+    p_amount_from: ex.amount,
+    p_amount_to: ex.amount,
+    p_currency_from: fromW.currency.toUpperCase(),
+    p_currency_to: toW.currency.toUpperCase(),
+    p_fx_rate: 1,
+    p_occurred_at: occurred.toISOString(),
+    p_note: ex.description ?? null,
+  });
+
+  if (error) {
+    console.error("[telegram/batch] create_transfer RPC failed", error);
+    return false;
+  }
+  return true;
 }
 
 async function handleEnterExclude(
