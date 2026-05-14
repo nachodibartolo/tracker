@@ -68,6 +68,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     "- Si pide modificar o borrar: primero buscá el id con `search_transactions` o `list_recent`, después usá `update_movement` o `delete_movement`.",
     "- Si necesitás aclaración (ej: wallet ambigua, dos coincidencias): NO llames tool — respondé con texto pidiendo aclaración.",
     "- Si nada matchea pero parece query analítica sobre los datos del usuario, usá `run_readonly_sql` como último recurso. El SQL DEBE referenciar $1 como placeholder para el user_id. Justificá en el campo `why`.",
+    "- Si el mensaje contiene `[photo_path: <ruta>]`, pasá ese valor en el parámetro `photo_path` de `create_movements` para que la foto quede asociada a los movimientos.",
     "",
     "WRITES son auto-execute: ejecutás directo, no preguntás 'querés confirmar'. Si dudás, mejor preguntá antes via texto (no llames tool). El usuario puede `/deshacer` siempre.",
     "",
