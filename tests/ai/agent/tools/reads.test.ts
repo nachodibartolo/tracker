@@ -76,3 +76,47 @@ describe("list_recent", () => {
     expect(out.length).toBe(1);
   });
 });
+
+import {
+  getBalanceTool,
+  getSpendByCategoryTool,
+  searchTransactionsTool,
+} from "@/lib/ai/agent/tools/reads";
+
+describe("search_transactions", () => {
+  it("matches description ILIKE", async () => {
+    const rows = [
+      { id: "t1", amount: 200, currency: "ARS", type: "expense", occurred_at: "2026-05-14T15:00:00Z", payee: "Café", description: null, wallet_id: "w", category_id: null },
+    ];
+    const supabase = { from: vi.fn(() => builderOf(rows)) };
+    const tool = searchTransactionsTool({ supabase: supabase as never, userId: "u" });
+    const out = await tool.execute({ query: "café" });
+    expect(out.length).toBe(1);
+  });
+});
+
+describe("get_balance", () => {
+  it("computes total per wallet", async () => {
+    const wallets = [
+      { id: "w1", name: "Nación", currency: "ARS", initial_balance: 0 },
+      { id: "w2", name: "MP", currency: "ARS", initial_balance: 0 },
+    ];
+    const txs = [
+      { wallet_id: "w1", type: "expense", amount: 200, counterpart_wallet_id: null, counterpart_amount: null },
+      { wallet_id: "w2", type: "income", amount: 500, counterpart_wallet_id: null, counterpart_amount: null },
+    ];
+    let n = 0;
+    const supabase = {
+      from: vi.fn(() => {
+        n += 1;
+        return builderOf(n === 1 ? wallets : txs);
+      }),
+    };
+    const tool = getBalanceTool({ supabase: supabase as never, userId: "u" });
+    const out = await tool.execute({});
+    const w1 = out.wallets.find((w) => w.id === "w1");
+    const w2 = out.wallets.find((w) => w.id === "w2");
+    expect(w1?.balance).toBe(-200);
+    expect(w2?.balance).toBe(500);
+  });
+});
