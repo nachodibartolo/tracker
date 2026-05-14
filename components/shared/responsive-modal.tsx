@@ -19,6 +19,7 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 import { useIsDesktop } from "@/hooks/use-media-query";
+import { cn } from "@/lib/utils";
 
 interface ResponsiveModalProps {
   open: boolean;
@@ -44,7 +45,7 @@ export function ResponsiveModal({
   if (isDesktop) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className={className}>
+        <DialogContent className={cn("max-h-[90vh] overflow-y-auto", className)}>
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
             {description ? <DialogDescription>{description}</DialogDescription> : null}
@@ -63,7 +64,9 @@ export function ResponsiveModal({
           <DrawerTitle>{title}</DrawerTitle>
           {description ? <DrawerDescription>{description}</DrawerDescription> : null}
         </DrawerHeader>
-        <div className="px-4 pb-4">{children}</div>
+        {/* `min-h-0` lets the flex child shrink past its content height so the
+            80vh drawer cap actually engages `overflow-y-auto` for tall forms. */}
+        <div className="min-h-0 overflow-y-auto px-4 pb-4">{children}</div>
         {footer ? <DrawerFooter>{footer}</DrawerFooter> : null}
       </DrawerContent>
     </Drawer>
