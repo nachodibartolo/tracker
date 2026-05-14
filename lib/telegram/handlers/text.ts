@@ -52,7 +52,7 @@ async function handleText(ctx: Context, next: NextFunction): Promise<void> {
   const supabaseConfigured =
     !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
     !!process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseConfigured) {
+  if (!supabaseConfigured || !process.env.TELEGRAM_BOT_TOKEN) {
     if (commandEntities.length === 0) {
       await ctx.reply(MAINTENANCE_TEXT);
     }
