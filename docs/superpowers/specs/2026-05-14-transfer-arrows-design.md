@@ -114,7 +114,6 @@ In `components/transactions/transaction-row.tsx`:
 ```tsx
 const isTransfer = row.type === "transfer";
 const isOutgoing = isTransfer && row.transfer_direction === "out";
-const isIncoming = isTransfer && row.transfer_direction === "in";
 const isIncome = !isTransfer && row.type === "income";
 
 // icon area
