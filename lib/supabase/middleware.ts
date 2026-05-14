@@ -3,7 +3,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "./database.types";
 
 const AUTH_ROUTES = ["/login", "/signup"];
-const PUBLIC_PATHS = ["/api/telegram/webhook", "/api/cron"];
+const PUBLIC_PATHS = [
+  "/api/telegram/webhook",
+  "/api/cron",
+  // Voice endpoint authenticates via its own Bearer token in voice_tokens,
+  // not via the Supabase session cookie. Must bypass the session redirect.
+  "/api/voice/agent",
+];
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
