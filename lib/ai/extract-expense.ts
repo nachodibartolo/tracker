@@ -132,6 +132,24 @@ function batchInstructions(): string {
 }
 
 /**
+ * Fallback item returned by the thin wrappers when the batch extractor returns
+ * `items=[]`. Mirrors the shape of `ExpenseItem` with all-null/unknown fields.
+ */
+const UNKNOWN_ITEM: ExpenseItem = {
+  type: "unknown",
+  amount: null,
+  currency: null,
+  payee: null,
+  description: null,
+  category_hint: null,
+  subcategory_hint: null,
+  occurred_at: null,
+  transfer_hint: false,
+  external_id: null,
+  confidence: 0,
+};
+
+/**
  * Wrapper thin: delega en `extractBatchFromText` y devuelve el primer item
  * para mantener compatibilidad con código que esperaba un solo movimiento.
  */
@@ -179,6 +197,7 @@ export async function extractBatchFromText(
     "Sos un extractor de gastos personales para un argentino. Recibís texto libre en español rioplatense que puede contener UN gasto o VARIOS (ej: 'gasté 200 en café y 1500 en uber, y cobré 80k de freelance').",
     "Extraé TODOS los movimientos mencionados. Cada uno es un item del array.",
     batchInstructions(),
+    "",
     baseSchemaInstructions(defaultCurrency),
   ].join("\n");
 
@@ -210,6 +229,7 @@ export async function extractBatchFromImage(
     "Recibís una imagen que puede ser: un ticket/recibo (UN movimiento), una tabla de homebanking (varias filas con Fecha/Concepto/Débitos/Créditos), o un feed de billetera virtual estilo Mercado Pago/Modo/Ualá (lista de actividades por día).",
     "Identificá qué tipo de imagen es (source_kind) y extraé TODOS los movimientos que aparecen.",
     batchInstructions(),
+    "",
     baseSchemaInstructions(defaultCurrency),
   ].join("\n");
 
@@ -252,6 +272,7 @@ export async function extractBatchFromAudio(
     "Recibís audios cortos en español rioplatense narrando uno o más gastos.",
     "Transcribí mentalmente y extraé cada movimiento mencionado.",
     batchInstructions(),
+    "",
     baseSchemaInstructions(defaultCurrency),
   ].join("\n");
 
@@ -283,17 +304,3 @@ export async function extractBatchFromAudio(
     );
   }
 }
-
-const UNKNOWN_ITEM: ExpenseItem = {
-  type: "unknown",
-  amount: null,
-  currency: null,
-  payee: null,
-  description: null,
-  category_hint: null,
-  subcategory_hint: null,
-  occurred_at: null,
-  transfer_hint: false,
-  external_id: null,
-  confidence: 0,
-};
