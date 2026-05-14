@@ -99,7 +99,6 @@ export async function setWalletForBatch(
     .eq("batch_id", batchId);
   if (error) {
     console.error("[telegram/pending-batch] set wallet failed", error);
-    throw error;
   }
 }
 
@@ -152,10 +151,14 @@ export async function excludeIndices(
 ): Promise<{ excluded: number[]; notFound: number[] }> {
   if (indices.length === 0) return { excluded: [], notFound: [] };
 
-  const { data: rows } = await supabase
+  const { data: rows, error: fetchError } = await supabase
     .from("telegram_pending")
     .select("batch_index")
     .eq("batch_id", batchId);
+  if (fetchError) {
+    console.error("[telegram/pending-batch] exclude fetch failed", fetchError);
+    return { excluded: [], notFound: indices };
+  }
   const existing = new Set((rows ?? []).map((r) => r.batch_index as number));
   const valid = indices.filter((i) => existing.has(i));
   const notFound = indices.filter((i) => !existing.has(i));
