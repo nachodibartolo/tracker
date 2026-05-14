@@ -41,6 +41,8 @@ export interface PromptContext {
   mainCurrency: string;
   todayIso: string;
   todayYearAr: string;
+  /** Optional UUID of the wallet to use when the user does not specify one. */
+  defaultWalletId?: string;
 }
 
 export interface DateContext {
@@ -62,7 +64,7 @@ export function currentDateContext(): DateContext {
 }
 
 export function buildSystemPrompt(ctx: PromptContext): string {
-  return [
+  const lines = [
     "Sos el asistente financiero personal de un usuario argentino. Hablás español rioplatense (Argentina), sos conciso y accionable.",
     "Recibís texto y/o imágenes desde Telegram. Tu tarea es entender qué quiere el usuario y elegir la tool correcta.",
     "",
@@ -84,5 +86,12 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     INTERNAL_TRANSFER_HINTS.map((h) => `  - ${h}`).join("\n"),
     "",
     `Default currency: ${ctx.mainCurrency}. Today (UTC ISO): ${ctx.todayIso}. Current year in Argentina: ${ctx.todayYearAr}.`,
-  ].join("\n");
+  ];
+  if (ctx.defaultWalletId) {
+    lines.push(
+      "",
+      `Wallet por defecto: si el usuario no especifica con qué wallet pagó/cobró, usá wallet_id="${ctx.defaultWalletId}" en \`create_movements\` en lugar de pedir aclaración.`,
+    );
+  }
+  return lines.join("\n");
 }

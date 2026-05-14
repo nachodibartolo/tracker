@@ -18,6 +18,12 @@ export interface RunAgentInput {
   mainCurrency: string;
   text?: string;
   image?: { data: Uint8Array; mimeType: string };
+  /**
+   * If the user does not specify a wallet in their text, the agent uses
+   * this UUID. Only set by the voice endpoint today; the Telegram handler
+   * leaves it unset (preserves current behavior).
+   */
+  defaultWalletId?: string;
 }
 
 const FALLBACK_REPLY =
@@ -36,7 +42,11 @@ export async function runExpenseAgent(
   requireGoogleAi();
 
   const dateCtx = currentDateContext();
-  const system = buildSystemPrompt({ ...dateCtx, mainCurrency: input.mainCurrency });
+  const system = buildSystemPrompt({
+    ...dateCtx,
+    mainCurrency: input.mainCurrency,
+    defaultWalletId: input.defaultWalletId,
+  });
   const tools = buildTools({
     supabase: input.supabase,
     userId: input.userId,
