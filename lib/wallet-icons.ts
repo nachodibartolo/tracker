@@ -13,8 +13,8 @@ import {
   TrendUp,
   Vault,
   Wallet,
-  type Icon,
 } from "@phosphor-icons/react/dist/ssr";
+import type { Icon } from "@phosphor-icons/react";
 
 export const WALLET_ICONS: readonly { name: string; component: Icon }[] = [
   { name: "wallet", component: Wallet },

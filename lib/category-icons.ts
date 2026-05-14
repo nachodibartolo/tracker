@@ -19,8 +19,8 @@ import {
   Sparkle,
   Tag,
   TrendUp,
-  type Icon,
 } from "@phosphor-icons/react/dist/ssr";
+import type { Icon } from "@phosphor-icons/react";
 
 export const CATEGORY_ICONS: readonly { name: string; component: Icon }[] = [
   { name: "fork-knife", component: ForkKnife },
