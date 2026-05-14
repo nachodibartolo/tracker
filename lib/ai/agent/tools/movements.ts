@@ -126,7 +126,7 @@ export function createMovementsTool(ctx: MovementsCtx) {
       const { data: inserted, error } = await ctx.supabase
         .from("transactions")
         .insert(rows)
-        .select("id");
+        .select("*");
       if (error || !inserted) {
         throw new Error(`create_movements insert failed: ${error?.message ?? "no rows"}`);
       }
@@ -138,7 +138,7 @@ export function createMovementsTool(ctx: MovementsCtx) {
         actionType: "create",
         targetIds: ids,
         beforePayload: null,
-        afterPayload: rows,
+        afterPayload: inserted,
         agentSummary: `creó ${ids.length} movimiento${ids.length === 1 ? "" : "s"}`,
       });
 
