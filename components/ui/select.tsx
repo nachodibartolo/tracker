@@ -63,7 +63,11 @@ function SelectContent({
   sideOffset = 4,
   align = "center",
   alignOffset = 0,
-  alignItemWithTrigger = true,
+  // Default to standard anchored popover. base-ui's `alignItemWithTrigger=true`
+  // tries to overlay the selected option onto the trigger — on mobile inside a
+  // Drawer with a long option list (e.g. the category select), that fights with
+  // the drawer's max-h and ends up covering the whole modal.
+  alignItemWithTrigger = false,
   ...props
 }: SelectPrimitive.Popup.Props &
   Pick<
