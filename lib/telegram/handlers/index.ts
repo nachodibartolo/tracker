@@ -26,6 +26,7 @@ import { registerPhotoHandler } from "./photo";
 import { registerStartHandler } from "./start";
 import { registerStatusHandlers } from "./status";
 import { registerTextHandler } from "./text";
+import { registerUndoHandler } from "./undo";
 import { registerVoiceHandler } from "./voice";
 
 const ONBOARDING_TEXT =
@@ -46,6 +47,7 @@ export function registerHandlers(bot: Bot): void {
   // --- Wave 3 ---
   registerStartHandler(bot);
   registerStatusHandlers(bot);
+  registerUndoHandler(bot);
 
   // --- Wave 4C + Wave 5 splice point ---
   // Order matters:
