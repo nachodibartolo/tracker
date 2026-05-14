@@ -468,6 +468,47 @@ export type Database = {
           },
         ]
       }
+      voice_tokens: {
+        Row: {
+          created_at: string
+          default_wallet_id: string | null
+          id: string
+          label: string
+          last_used_at: string | null
+          revoked_at: string | null
+          token_hash: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          default_wallet_id?: string | null
+          id?: string
+          label: string
+          last_used_at?: string | null
+          revoked_at?: string | null
+          token_hash: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          default_wallet_id?: string | null
+          id?: string
+          label?: string
+          last_used_at?: string | null
+          revoked_at?: string | null
+          token_hash?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_tokens_default_wallet_id_fkey"
+            columns: ["default_wallet_id"]
+            isOneToOne: false
+            referencedRelation: "wallets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       wallets: {
         Row: {
           archived: boolean
