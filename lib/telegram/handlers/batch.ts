@@ -15,7 +15,7 @@ import type { Bot, Context } from "grammy";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveCategory } from "@/lib/telegram/category-resolver";
-import { setAwaitingMode } from "@/lib/telegram/chat-state";
+import { clearAwaiting, setAwaitingMode } from "@/lib/telegram/chat-state";
 import { deduplicateBatch } from "@/lib/telegram/dedup";
 import {
   applyDedupFlags,
@@ -351,13 +351,17 @@ async function handleEnterTransfer(
 
   const userId = rows[0].user_id;
   const targetWalletId = rows[0].suggested_wallet_id;
+  if (!targetWalletId) {
+    await ctx.answerCallbackQuery({ text: "Elegí una wallet primero" });
+    return;
+  }
 
   const { data: wallets } = await supabase
     .from("wallets")
     .select("id, name")
     .eq("user_id", userId)
     .eq("archived", false)
-    .neq("id", targetWalletId ?? "")
+    .neq("id", targetWalletId)
     .order("position", { ascending: true });
 
   if (!wallets || wallets.length === 0) {
@@ -411,6 +415,19 @@ async function handleSetCounterpart(
     await ctx.answerCallbackQuery({ text: ERROR_TEXT });
     return;
   }
+  const chatId = ctx.chat!.id;
+
+  // Ownership check — confirm this chat owns the pending row before mutating.
+  const { data: pending } = await supabase
+    .from("telegram_pending")
+    .select("telegram_chat_id")
+    .eq("id", pendingId)
+    .maybeSingle();
+  if (!pending || pending.telegram_chat_id !== chatId) {
+    await ctx.answerCallbackQuery({ text: NOT_FOUND_TEXT });
+    return;
+  }
+
   await setCounterpart(supabase, pendingId, walletId);
   await ctx.answerCallbackQuery({ text: "🔁 marcado" });
   try {
@@ -431,6 +448,7 @@ async function handleTransferDone(
     return;
   }
   const chatId = ctx.chat!.id;
+  await clearAwaiting(supabase, chatId);
   await renderBatchPreview(ctx, supabase, batchId, chatId);
   await ctx.answerCallbackQuery();
 }
