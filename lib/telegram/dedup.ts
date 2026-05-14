@@ -52,6 +52,27 @@ function bucketKey(dateStr: string, amount: number, type: string): string {
 }
 
 /**
+ * `occurred_at` may be a real timestamp or the "noon-local" sentinel that
+ * the AI extractor emits when only a date was visible (no hour). We can't
+ * just compare strings — Zod accepts variant ISO representations
+ * (`T12:00:00-03:00`, `T12:00:00.000-03:00`, `T15:00:00Z`, etc) — so we
+ * convert to local TZ and check if it's exactly noon:00.
+ */
+function isNoonLocalSentinel(iso: string): boolean {
+  const d = new Date(iso);
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  // fmt.format returns "12:00:00" (24h). We strip non-digits and compare.
+  const parts = fmt.format(d);
+  return parts.startsWith("12:00:00") || parts.startsWith("24:00:00"); // 24:00:00 is en-US 24h noon edge in some locales
+}
+
+/**
  * Pure function: emparejamiento 1:1 entre items y candidatos.
  *
  * Para cada item (en orden temporal), busca un candidato no consumido en
@@ -97,7 +118,7 @@ export function pairItems(
     const bucket = byBucket.get(bucketKey(itemDate, item.amount, item.type));
     if (!bucket) continue;
 
-    const itemHasTime = itemIso !== null && !itemIso.endsWith("T12:00:00-03:00");
+    const itemHasTime = itemIso !== null && !isNoonLocalSentinel(itemIso);
     let match: DedupCandidate | undefined;
 
     for (const c of bucket) {
@@ -174,7 +195,7 @@ export async function deduplicateBatch(
     .eq("suggested_wallet_id", walletId)
     .eq("excluded", false)
     .gt("expires_at", new Date().toISOString())
-    .neq("batch_id", excludeBatchId);
+    .or(`batch_id.is.null,batch_id.neq.${excludeBatchId}`);
 
   if (pErr) {
     console.error("[telegram/dedup] pending fetch failed", pErr);
