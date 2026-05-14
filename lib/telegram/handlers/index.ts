@@ -20,6 +20,7 @@ import type { Bot } from "grammy";
 
 import { getLinkedUser } from "@/lib/telegram/get-linked-user";
 
+import { registerBatchHandler } from "./batch";
 import { registerConfirmHandler } from "./confirm";
 import { registerPhotoHandler } from "./photo";
 import { registerStartHandler } from "./start";
@@ -46,16 +47,15 @@ export function registerHandlers(bot: Bot): void {
   registerStartHandler(bot);
   registerStatusHandlers(bot);
 
-  // --- Wave 4C splice point (insert AI handlers HERE, above catch-all) ---
-  //
+  // --- Wave 4C + Wave 5 splice point ---
   // Order matters:
-  //   - confirm FIRST so callback_query updates don't fall through to the
-  //     catch-all's `["message", "callback_query"]` filter.
-  //   - photo / voice BEFORE text because grammY matches first-listener-
-  //     wins per filter; we want media handlers to claim media updates so
-  //     the text handler never sees their captions.
-  //   - text LAST among the new handlers — it short-circuits on commands so
-  //     /start, /saldo, /ultimos still reach the command handlers above.
+  //   - batch FIRST so `b*` callbacks are claimed before the legacy
+  //     `confirm:/edit:/cancel:` matcher in confirm.ts.
+  //   - confirm SECOND for any legacy single-item pending row still in flight.
+  //   - photo / voice BEFORE text so media handlers claim media updates.
+  //   - text LAST among the new handlers — it intercepts CSV exclusion and
+  //     /cancel + /listo before falling through to the AI extractor.
+  registerBatchHandler(bot);
   registerConfirmHandler(bot);
   registerPhotoHandler(bot);
   registerVoiceHandler(bot);
