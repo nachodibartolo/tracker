@@ -102,28 +102,4 @@ export type ExpenseItem = z.infer<typeof ExpenseItemSchema>;
  * Backwards-compat alias. Old code (handlers single, web app) imports
  * `ExpenseExtraction`. We keep the type around so the diff stays surgical.
  */
-export const ExpenseExtractionSchema = ExpenseItemSchema;
 export type ExpenseExtraction = ExpenseItem;
-
-export const SourceKindSchema = z.enum([
-  "receipt",
-  "bank_statement",
-  "wallet_app_feed",
-  "free_text",
-  "unknown",
-]);
-
-export type SourceKind = z.infer<typeof SourceKindSchema>;
-
-/**
- * Output of the batch extractor. `items=[]` plus `source_kind='unknown'`
- * means the AI couldn't make sense of the input. A receipt (1 item) and a
- * bank statement (24 items) share this shape — handlers branch on
- * `items.length`.
- */
-export const ExpenseBatchExtractionSchema = z.object({
-  source_kind: SourceKindSchema,
-  items: z.array(ExpenseItemSchema).max(100),
-});
-
-export type ExpenseBatchExtraction = z.infer<typeof ExpenseBatchExtractionSchema>;
