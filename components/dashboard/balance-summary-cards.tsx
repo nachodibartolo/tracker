@@ -51,22 +51,20 @@ export function BalanceSummaryCards({
         size="sm"
         className="relative col-span-full overflow-hidden bg-gradient-to-br from-primary/15 via-primary/8 to-transparent md:col-span-1 md:row-span-2"
       >
-        <div className="flex h-full flex-col gap-1 px-4 py-4 md:py-5">
+        <div className="flex h-full min-h-[180px] flex-col justify-between gap-4 px-5 py-5 md:px-6 md:py-6">
           <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
             <Wallet weight="duotone" className="size-3.5" />
             <span>{t.dashboard.totalBalance}</span>
           </div>
-          <div className="mt-auto flex items-baseline gap-2">
-            <p
-              className={cn(
-                "font-heading text-3xl font-semibold tabular-nums leading-none md:text-4xl",
-                totalBalance < 0 && "text-destructive",
-              )}
-            >
-              {formatCurrency(totalBalance, currency)}
-            </p>
-          </div>
-          <p className="mt-2 text-[11px] uppercase tracking-wider text-muted-foreground">
+          <p
+            className={cn(
+              "font-heading text-2xl font-semibold tabular-nums leading-none md:text-3xl",
+              totalBalance < 0 && "text-destructive",
+            )}
+          >
+            {formatCurrency(totalBalance, currency)}
+          </p>
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
             actualizado hoy
           </p>
         </div>

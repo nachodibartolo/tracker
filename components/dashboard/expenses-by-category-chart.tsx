@@ -12,7 +12,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { getCategoryIcon } from "@/lib/category-icons";
-import { formatCurrency } from "@/lib/format";
+import { formatCompactCurrency, formatCurrency } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -144,13 +144,15 @@ export function ExpensesByCategoryChart({
               </Pie>
             </PieChart>
           </ChartContainer>
-          {/* Center label */}
-          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+          {/* Center label. Compact for ≥1M so the value never overflows the donut hole. */}
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-4 text-center">
             <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
               Total
             </p>
-            <p className="font-heading text-lg font-semibold tabular-nums leading-tight">
-              {formatCurrency(total, currency)}
+            <p className="font-heading text-base font-semibold tabular-nums leading-tight whitespace-nowrap">
+              {Math.abs(total) >= 1_000_000
+                ? formatCompactCurrency(total, currency)
+                : formatCurrency(total, currency)}
             </p>
           </div>
         </div>
