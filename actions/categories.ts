@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { CATEGORY_ICON_NAMES } from "@/lib/category-icons";
+import {
+  getFlatCategoryOptions,
+  type FlatCategoryOption,
+} from "@/lib/domain/categories";
 import { createClient } from "@/lib/supabase/server";
 import type { CategoryUpdate } from "@/lib/supabase/database.types";
 
@@ -280,5 +284,34 @@ export async function deleteCategory(id: string): Promise<ActionResult> {
 
   revalidatePath("/categories");
   return { ok: true };
+}
+
+/**
+ * Devuelve las categorías del usuario actual para un tipo dado, en formato
+ * plano (top-level + subcategorías con prefijo `"Parent › Child"`). Pensada
+ * para selects on-demand desde componentes cliente — la página de transacciones
+ * ya las fetchea server-side, así que esta acción cubre los lugares donde no
+ * tenemos la lista pre-cargada (dashboard, recent-transactions).
+ */
+export async function getMyCategoryOptions(
+  type: "expense" | "income",
+): Promise<ActionResult<FlatCategoryOption[]>> {
+  if (type !== "expense" && type !== "income") {
+    return { ok: false, error: "Tipo inválido" };
+  }
+
+  const { supabase, user } = await requireUser();
+  if (!user) {
+    return { ok: false, error: "No autenticado" };
+  }
+
+  try {
+    const options = await getFlatCategoryOptions(supabase, user.id, type);
+    return { ok: true, data: options };
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "No se pudieron cargar las categorías";
+    return { ok: false, error: message };
+  }
 }
 
