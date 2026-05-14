@@ -212,3 +212,47 @@ export function updateMovementTool(ctx: MovementsCtx) {
     },
   });
 }
+
+const DeleteInput = z.object({
+  id: z.string().uuid(),
+});
+
+export function deleteMovementTool(ctx: MovementsCtx) {
+  return tool({
+    description:
+      "Elimina un movimiento por id. Antes de llamar, asegurate de tener el id correcto. El usuario puede deshacerlo con /deshacer.",
+    inputSchema: DeleteInput,
+    execute: async (input) => {
+      const { data: before, error: readErr } = await ctx.supabase
+        .from("transactions")
+        .select("*")
+        .eq("id", input.id)
+        .eq("user_id", ctx.userId)
+        .single();
+      if (readErr || !before) {
+        throw new Error(`delete_movement: transacción ${input.id} no encontrada`);
+      }
+
+      const { error: delErr } = await ctx.supabase
+        .from("transactions")
+        .delete()
+        .eq("id", input.id)
+        .eq("user_id", ctx.userId);
+      if (delErr) {
+        throw new Error(`delete_movement failed: ${delErr.message}`);
+      }
+
+      await logAction(ctx.supabase, {
+        userId: ctx.userId,
+        chatId: ctx.chatId,
+        actionType: "delete",
+        targetIds: [input.id],
+        beforePayload: before,
+        afterPayload: null,
+        agentSummary: `borró ${input.id}`,
+      });
+
+      return { deleted: true as const, id: input.id };
+    },
+  });
+}

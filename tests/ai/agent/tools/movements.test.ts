@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createMovementsTool, updateMovementTool } from "@/lib/ai/agent/tools/movements";
+import { createMovementsTool, deleteMovementTool, updateMovementTool } from "@/lib/ai/agent/tools/movements";
 
 function makeCtx() {
   const inserted = [
@@ -128,6 +128,64 @@ describe("update_movement", () => {
     const out = await tool.execute({ id: "tx-1", patch: { amount: 250 } });
     expect(out.id).toBe("tx-1");
     expect(out.amount).toBe(250);
+  });
+});
+
+describe("delete_movement", () => {
+  it("reads row, deletes, logs full row in before_payload", async () => {
+    const before = {
+      id: "tx-1",
+      user_id: "u",
+      wallet_id: "w",
+      amount: 200,
+      currency: "ARS",
+      type: "expense",
+      occurred_at: "2026-05-14T15:00:00Z",
+    };
+
+    const supabase = {
+      from: vi.fn((table: string) => {
+        if (table === "transactions") {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  single: vi
+                    .fn()
+                    .mockResolvedValue({ data: before, error: null }),
+                }),
+              }),
+            }),
+            delete: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockResolvedValue({ error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === "telegram_agent_actions") {
+          return {
+            insert: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnValue({
+                single: vi
+                  .fn()
+                  .mockResolvedValue({ data: { id: "act-3" }, error: null }),
+              }),
+            }),
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+    };
+
+    const tool = deleteMovementTool({
+      supabase: supabase as never,
+      userId: "u",
+      chatId: 123,
+      mainCurrency: "ARS",
+    });
+    const out = await tool.execute({ id: "tx-1" });
+    expect(out.deleted).toBe(true);
   });
 });
 
