@@ -3,11 +3,10 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { DotsThreeVertical, Pencil, Tag, Trash } from "@phosphor-icons/react";
+import { DotsThreeVertical, Pencil, Trash } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 import { deleteTransaction } from "@/actions/transactions";
-import { QuickCategoryEdit } from "@/components/transactions/quick-category-edit";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,7 +52,6 @@ export function TransactionRow({ row, className }: TransactionRowProps) {
   const [pending, startTransition] = React.useTransition();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
-  const [quickCatOpen, setQuickCatOpen] = React.useState(false);
 
   // --- long-press to open menu --------------------------------------------
   const longPressTimer = React.useRef<number | null>(null);
@@ -220,12 +218,6 @@ export function TransactionRow({ row, className }: TransactionRowProps) {
               <Pencil />
               {t.actions.edit}
             </DropdownMenuItem>
-            {row.type !== "transfer" ? (
-              <DropdownMenuItem onClick={() => setQuickCatOpen(true)}>
-                <Tag />
-                {t.transaction.editCategory}
-              </DropdownMenuItem>
-            ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuItem
               variant="destructive"
@@ -264,16 +256,6 @@ export function TransactionRow({ row, className }: TransactionRowProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {row.type !== "transfer" ? (
-        <QuickCategoryEdit
-          transactionId={row.id}
-          txType={row.type === "income" ? "income" : "expense"}
-          currentCategoryId={row.category?.id ?? null}
-          open={quickCatOpen}
-          onOpenChange={setQuickCatOpen}
-        />
-      ) : null}
     </>
   );
 }
