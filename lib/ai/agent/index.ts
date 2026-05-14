@@ -72,12 +72,11 @@ export async function runExpenseAgent(
       stopWhen: stepCountIs(5),
       toolChoice: "auto",
       temperature: 0,
-      onStepFinish: ({ toolCalls, stepType }) => {
+      onStepFinish: ({ toolCalls }) => {
         for (const tc of toolCalls ?? []) {
           console.info("[agent/step]", {
             user_id: input.userId,
             chat_id: input.chatId,
-            step_type: stepType,
             tool_name: tc.toolName,
             ms_elapsed: Date.now() - startedAt,
           });
