@@ -20,7 +20,7 @@ import {
   Tag,
   TrendUp,
   type Icon,
-} from "@phosphor-icons/react";
+} from "@phosphor-icons/react/dist/ssr";
 
 export const CATEGORY_ICONS: readonly { name: string; component: Icon }[] = [
   { name: "fork-knife", component: ForkKnife },
