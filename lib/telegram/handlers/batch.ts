@@ -144,9 +144,6 @@ async function handleCancel(
   }
 }
 
-// =============================================================================
-// Stubs — se implementan en Tasks J2/J3/K1 para que el typecheck pase ya.
-// =============================================================================
 async function handleConfirm(
   ctx: Context,
   supabase: ReturnType<typeof createAdminClient>,
@@ -334,9 +331,69 @@ async function handleEnterTransfer(
   supabase: ReturnType<typeof createAdminClient>,
   data: string,
 ): Promise<void> {
-  void supabase;
-  void data;
-  await ctx.answerCallbackQuery({ text: "Próximamente" });
+  const batchId = data.split(":")[1];
+  if (!batchId) {
+    await ctx.answerCallbackQuery({ text: ERROR_TEXT });
+    return;
+  }
+  const chatId = ctx.chat!.id;
+  const rows = await loadBatch(supabase, batchId, chatId);
+  if (rows.length === 0) {
+    await ctx.answerCallbackQuery({ text: NOT_FOUND_TEXT });
+    return;
+  }
+
+  const targets = rows.filter((r) => r.transfer_hint && !r.excluded);
+  if (targets.length === 0) {
+    await ctx.answerCallbackQuery({ text: "No hay transfers para marcar" });
+    return;
+  }
+
+  const userId = rows[0].user_id;
+  const targetWalletId = rows[0].suggested_wallet_id;
+
+  const { data: wallets } = await supabase
+    .from("wallets")
+    .select("id, name")
+    .eq("user_id", userId)
+    .eq("archived", false)
+    .neq("id", targetWalletId ?? "")
+    .order("position", { ascending: true });
+
+  if (!wallets || wallets.length === 0) {
+    await ctx.answerCallbackQuery({ text: "No tenés otra wallet" });
+    return;
+  }
+
+  const ok = await setAwaitingMode(supabase, chatId, "transfer", batchId);
+  if (!ok) {
+    await ctx.answerCallbackQuery({ text: ERROR_TEXT });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+
+  for (const row of targets) {
+    const ex = row.extraction;
+    const dateStr = ex.occurred_at ? new Date(ex.occurred_at).toLocaleDateString("es-AR") : "?";
+    const summary = `${dateStr} · ${ex.amount ?? "?"} · ${ex.payee ?? ex.description ?? "—"}`;
+    const buttons = wallets.map((w) => ({
+      text: w.name,
+      callback_data: `btrset:${row.id}:${w.id}`,
+    }));
+    const inline: Array<Array<{ text: string; callback_data: string }>> = [];
+    for (let i = 0; i < buttons.length; i += 2) {
+      inline.push(buttons.slice(i, i + 2));
+    }
+    await ctx.reply(`🔄 ${summary} → ¿a qué wallet?`, {
+      reply_markup: { inline_keyboard: inline },
+    });
+  }
+
+  await ctx.reply("Cuando termines, tapeá el botón.", {
+    reply_markup: {
+      inline_keyboard: [[{ text: "← Volver al preview", callback_data: `btrdone:${batchId}` }]],
+    },
+  });
 }
 
 async function handleSetCounterpart(
@@ -344,9 +401,23 @@ async function handleSetCounterpart(
   supabase: ReturnType<typeof createAdminClient>,
   data: string,
 ): Promise<void> {
-  void supabase;
-  void data;
-  await ctx.answerCallbackQuery({ text: "Próximamente" });
+  const parts = data.split(":");
+  if (parts.length !== 3) {
+    await ctx.answerCallbackQuery({ text: ERROR_TEXT });
+    return;
+  }
+  const [, pendingId, walletId] = parts;
+  if (!pendingId || !walletId) {
+    await ctx.answerCallbackQuery({ text: ERROR_TEXT });
+    return;
+  }
+  await setCounterpart(supabase, pendingId, walletId);
+  await ctx.answerCallbackQuery({ text: "🔁 marcado" });
+  try {
+    await ctx.editMessageText("🔁 transfer asignado a wallet");
+  } catch (err) {
+    console.error("[telegram/batch] edit transfer-set failed", err);
+  }
 }
 
 async function handleTransferDone(
@@ -354,8 +425,13 @@ async function handleTransferDone(
   supabase: ReturnType<typeof createAdminClient>,
   data: string,
 ): Promise<void> {
-  void supabase;
-  void data;
+  const batchId = data.split(":")[1];
+  if (!batchId) {
+    await ctx.answerCallbackQuery({ text: ERROR_TEXT });
+    return;
+  }
+  const chatId = ctx.chat!.id;
+  await renderBatchPreview(ctx, supabase, batchId, chatId);
   await ctx.answerCallbackQuery();
 }
 
