@@ -52,6 +52,7 @@ export async function resolveWalletFromCaption(
   if (cap) {
     const exact = wallets.filter((w) => normalise(w.name) === cap);
     if (exact.length === 1) return { kind: "resolved", wallet: exact[0] };
+    if (exact.length > 1) return { kind: "ask", candidates: exact };
 
     const substring = wallets.filter((w) => {
       const n = normalise(w.name);
@@ -68,6 +69,9 @@ export async function resolveWalletFromCaption(
   }
 
   // No caption: try default, fall back to ask if there are multiple wallets.
+  // defaultWalletId may point to an archived wallet (excluded by the
+  // archived=false filter above); if so, fall through to the single-wallet
+  // shortcut or "ask".
   if (defaultWalletId) {
     const def = wallets.find((w) => w.id === defaultWalletId);
     if (def) return { kind: "resolved", wallet: def };
