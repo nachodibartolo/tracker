@@ -134,6 +134,59 @@ export type Database = {
         }
         Relationships: []
       }
+      telegram_agent_actions: {
+        Row: {
+          action_type: string
+          after_payload: Json | null
+          agent_summary: string | null
+          before_payload: Json | null
+          created_at: string
+          id: string
+          reversed_at: string | null
+          reversed_by_action_id: string | null
+          target_ids: string[]
+          target_table: string
+          telegram_chat_id: number
+          user_id: string
+        }
+        Insert: {
+          action_type: string
+          after_payload?: Json | null
+          agent_summary?: string | null
+          before_payload?: Json | null
+          created_at?: string
+          id?: string
+          reversed_at?: string | null
+          reversed_by_action_id?: string | null
+          target_ids: string[]
+          target_table?: string
+          telegram_chat_id: number
+          user_id: string
+        }
+        Update: {
+          action_type?: string
+          after_payload?: Json | null
+          agent_summary?: string | null
+          before_payload?: Json | null
+          created_at?: string
+          id?: string
+          reversed_at?: string | null
+          reversed_by_action_id?: string | null
+          target_ids?: string[]
+          target_table?: string
+          telegram_chat_id?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "telegram_agent_actions_reversed_by_action_id_fkey"
+            columns: ["reversed_by_action_id"]
+            isOneToOne: false
+            referencedRelation: "telegram_agent_actions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       telegram_link_codes: {
         Row: {
           code: string
@@ -453,6 +506,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      agent_readonly_query: {
+        Args: { p_sql: string; p_user_id: string }
+        Returns: Json
+      }
       create_transfer: {
         Args: {
           p_amount_from: number
