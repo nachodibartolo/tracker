@@ -208,6 +208,21 @@ export type Database = {
         }
         Relationships: []
       }
+      telegram_processed_updates: {
+        Row: {
+          processed_at: string
+          update_id: number
+        }
+        Insert: {
+          processed_at?: string
+          update_id: number
+        }
+        Update: {
+          processed_at?: string
+          update_id?: number
+        }
+        Relationships: []
+      }
       telegram_pending: {
         Row: {
           batch_id: string | null

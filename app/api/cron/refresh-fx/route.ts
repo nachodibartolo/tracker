@@ -101,5 +101,17 @@ export async function GET(request: Request) {
   }
 
   const { ok, failed } = await refreshTodayRates(pairs);
+
+  // Best-effort cleanup of the Telegram webhook idempotency table. Anything
+  // older than 7 days can't possibly be a Telegram retry anymore.
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { error: pruneErr } = await supabase
+    .from("telegram_processed_updates")
+    .delete()
+    .lt("processed_at", cutoff);
+  if (pruneErr) {
+    console.error("[cron/refresh-fx] prune telegram updates failed", pruneErr);
+  }
+
   return NextResponse.json({ ok: true, fetched: ok, failed });
 }

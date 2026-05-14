@@ -1,47 +1,39 @@
 // Telegram webhook endpoint.
 //
-// Security: grammY's `webhookCallback` validates Telegram's
-// `X-Telegram-Bot-Api-Secret-Token` header against `secretToken`. If the
-// header is missing or wrong, the callback responds 401 and the request
-// never reaches a handler. We set this secret on the Telegram side via
-// `setWebhook` (Wave 6).
+// Flow:
+//   1. Validate the `X-Telegram-Bot-Api-Secret-Token` header up front. Saves
+//      doing any work for forged requests.
+//   2. Parse the body and pull `update_id`. Insert it into
+//      `telegram_processed_updates`; a PK conflict means Telegram is retrying
+//      a delivery we already accepted — in that case we return 200 and skip.
+//      Telegram retries when it doesn't see a 2xx within ~10s, and the agent
+//      can take much longer than that.
+//   3. Return 200 immediately, then process the update via Next's `after()`.
+//      That way Telegram's retry timer never fires while the agent is still
+//      working, and grammY's default 10s `webhookCallback` timeout no longer
+//      applies (we never use webhookCallback).
 //
-// Pre-provisioning safety: if `TELEGRAM_BOT_TOKEN` is unset (Wave 0–5 dev /
-// CI), constructing the grammY `Bot` would still succeed (we feed it a
-// placeholder), but every Telegram API call would fail. Rather than confuse
-// monitoring, we short-circuit with a 200 + `{ok: true, skipped: true}` so
-// any background pinger / smoke test treats the endpoint as healthy.
+// Pre-provisioning safety: if the bot/Supabase env vars aren't wired yet
+// (Wave 0–5 dev / CI), short-circuit with `{ok:true,skipped:true}` so cron
+// pings stay green.
 
-import { webhookCallback } from "grammy";
+import { after } from "next/server";
 
 import { bot, registerHandlers } from "@/lib/telegram/bot";
+import { createAdminClient } from "@/lib/supabase/admin";
 
-// Node runtime is required: the admin Supabase client + grammY's Node helpers
-// pull in APIs that the Edge runtime doesn't support.
+import type { Update } from "grammy/types";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// We return 200 within milliseconds; the agent finishes in `after()`. The
+// runtime keeps the function alive until `after()` resolves, so this cap
+// covers the slowest realistic agent run (Gemma free tier under rate limit).
+export const maxDuration = 300;
 
-// Wire handlers once at module load. `registerHandlers` is idempotent.
 registerHandlers();
 
-// Cache the callback closure across invocations. Recomputing it on every
-// request would be wasteful on warm functions.
-let _handler:
-  | ((req: Request) => Promise<Response>)
-  | null = null;
-
-function getHandler(): (req: Request) => Promise<Response> {
-  if (_handler) return _handler;
-  _handler = webhookCallback(bot, "std/http", {
-    secretToken: process.env.TELEGRAM_WEBHOOK_SECRET,
-  });
-  return _handler;
-}
-
 export async function POST(req: Request): Promise<Response> {
-  // Without a bot token, we never registered a webhook upstream and can't
-  // reply meaningfully. Return 200 so cron/CI pings stay green.
   if (
     !process.env.TELEGRAM_BOT_TOKEN ||
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -50,13 +42,53 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: true, skipped: true });
   }
 
-  try {
-    return await getHandler()(req);
-  } catch (err) {
-    // grammY's callback throws on validation failures (e.g. bad secret token).
-    // Surface them as 200s WITHOUT processing so Telegram doesn't queue
-    // unbounded retries; we log so we notice if the secret rotated.
-    console.error("[telegram/webhook] handler error", err);
-    return Response.json({ ok: false }, { status: 500 });
+  const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (expectedSecret) {
+    const got = req.headers.get("x-telegram-bot-api-secret-token");
+    if (got !== expectedSecret) {
+      return Response.json({ ok: false }, { status: 401 });
+    }
   }
+
+  let update: Update;
+  try {
+    update = (await req.json()) as Update;
+  } catch (err) {
+    console.error("[telegram/webhook] invalid json", err);
+    return Response.json({ ok: false }, { status: 400 });
+  }
+
+  if (typeof update?.update_id !== "number") {
+    return Response.json({ ok: false }, { status: 400 });
+  }
+
+  const supabase = createAdminClient();
+  const { error: dedupErr } = await supabase
+    .from("telegram_processed_updates")
+    .insert({ update_id: update.update_id });
+
+  if (dedupErr) {
+    // 23505 = unique_violation = Telegram is retrying a delivery we already
+    // accepted. Acknowledge with 200 so Telegram stops retrying.
+    if (dedupErr.code === "23505") {
+      console.info("[telegram/webhook] duplicate update", {
+        update_id: update.update_id,
+      });
+      return Response.json({ ok: true, dedup: true });
+    }
+    // Any other dedup failure (DB outage, etc.): fail-open and process
+    // anyway. Worst case the user sees the same reply twice; better than
+    // silently dropping a real message.
+    console.error("[telegram/webhook] dedup insert failed", dedupErr);
+  }
+
+  after(async () => {
+    try {
+      await bot.handleUpdate(update);
+    } catch (err) {
+      console.error("[telegram/webhook] handler error", err);
+    }
+  });
+
+  return Response.json({ ok: true });
 }

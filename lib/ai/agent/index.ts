@@ -69,9 +69,14 @@ export async function runExpenseAgent(
       system,
       messages: [{ role: "user", content: userParts }],
       tools,
-      stopWhen: stepCountIs(5),
+      // Most user intents resolve in 2 steps (decide tool → write response).
+      // Cap at 3 to bound worst-case latency under Gemma free-tier slowness.
+      stopWhen: stepCountIs(3),
       toolChoice: "auto",
       temperature: 0,
+      // Default is 2 retries with exponential backoff; under free-tier rate
+      // limits that compounds badly. Fail fast and surface the quota error.
+      maxRetries: 1,
       onStepFinish: ({ toolCalls }) => {
         for (const tc of toolCalls ?? []) {
           console.info("[agent/step]", {
