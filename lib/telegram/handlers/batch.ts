@@ -296,9 +296,17 @@ async function handleEnterExclude(
   supabase: ReturnType<typeof createAdminClient>,
   data: string,
 ): Promise<void> {
-  void supabase;
-  void data;
-  await ctx.answerCallbackQuery({ text: "Próximamente" });
+  const batchId = data.split(":")[1];
+  const chatId = ctx.chat!.id;
+  const ok = await setAwaitingMode(supabase, chatId, "exclude", batchId);
+  if (!ok) {
+    await ctx.answerCallbackQuery({ text: ERROR_TEXT });
+    return;
+  }
+  await ctx.reply(
+    "Mandá los números a excluir separados por coma (ej: 3,7,12) o /cancel para volver. Tenés 2 minutos.",
+  );
+  await ctx.answerCallbackQuery();
 }
 
 async function handleEnterTransfer(
