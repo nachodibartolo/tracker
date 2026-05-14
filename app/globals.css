@@ -130,3 +130,27 @@
     @apply font-sans;
     }
 }
+
+@layer utilities {
+  .pt-safe {
+    padding-top: max(env(safe-area-inset-top), 0.5rem);
+  }
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+  }
+  .pl-safe {
+    padding-left: max(env(safe-area-inset-left), 0.5rem);
+  }
+  .pr-safe {
+    padding-right: max(env(safe-area-inset-right), 0.5rem);
+  }
+  .mb-safe {
+    margin-bottom: env(safe-area-inset-bottom);
+  }
+  .mt-safe {
+    margin-top: env(safe-area-inset-top);
+  }
+  .h-dvh-safe {
+    min-height: 100dvh;
+  }
+}
