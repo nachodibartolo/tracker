@@ -157,42 +157,80 @@ export type Database = {
       }
       telegram_pending: {
         Row: {
+          batch_id: string | null
+          batch_index: number | null
+          counterpart_wallet_id: string | null
           created_at: string
+          duplicate_of_tx_id: string | null
+          excluded: boolean
           expires_at: string
           extraction: Json
           id: string
+          is_duplicate: boolean
           photo_path: string | null
           source: Database["public"]["Enums"]["tx_source"]
           suggested_category_id: string | null
           suggested_wallet_id: string | null
           telegram_chat_id: number
+          telegram_message_id: number | null
+          transfer_hint: boolean
           user_id: string
         }
         Insert: {
+          batch_id?: string | null
+          batch_index?: number | null
+          counterpart_wallet_id?: string | null
           created_at?: string
+          duplicate_of_tx_id?: string | null
+          excluded?: boolean
           expires_at?: string
           extraction: Json
           id?: string
+          is_duplicate?: boolean
           photo_path?: string | null
           source: Database["public"]["Enums"]["tx_source"]
           suggested_category_id?: string | null
           suggested_wallet_id?: string | null
           telegram_chat_id: number
+          telegram_message_id?: number | null
+          transfer_hint?: boolean
           user_id: string
         }
         Update: {
+          batch_id?: string | null
+          batch_index?: number | null
+          counterpart_wallet_id?: string | null
           created_at?: string
+          duplicate_of_tx_id?: string | null
+          excluded?: boolean
           expires_at?: string
           extraction?: Json
           id?: string
+          is_duplicate?: boolean
           photo_path?: string | null
           source?: Database["public"]["Enums"]["tx_source"]
           suggested_category_id?: string | null
           suggested_wallet_id?: string | null
           telegram_chat_id?: number
+          telegram_message_id?: number | null
+          transfer_hint?: boolean
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "telegram_pending_counterpart_wallet_id_fkey"
+            columns: ["counterpart_wallet_id"]
+            isOneToOne: false
+            referencedRelation: "wallets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "telegram_pending_duplicate_of_tx_id_fkey"
+            columns: ["duplicate_of_tx_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "telegram_pending_suggested_category_id_fkey"
             columns: ["suggested_category_id"]
@@ -208,6 +246,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      telegram_chat_state: {
+        Row: {
+          awaiting_exclude_batch_id: string | null
+          awaiting_transfer_batch_id: string | null
+          expires_at: string
+          set_at: string
+          telegram_chat_id: number
+        }
+        Insert: {
+          awaiting_exclude_batch_id?: string | null
+          awaiting_transfer_batch_id?: string | null
+          expires_at?: string
+          set_at?: string
+          telegram_chat_id: number
+        }
+        Update: {
+          awaiting_exclude_batch_id?: string | null
+          awaiting_transfer_batch_id?: string | null
+          expires_at?: string
+          set_at?: string
+          telegram_chat_id?: number
+        }
+        Relationships: []
       }
       telegram_users: {
         Row: {
