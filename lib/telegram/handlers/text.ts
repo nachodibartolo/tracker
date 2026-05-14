@@ -1,25 +1,31 @@
-// Free-text expense handler.
+// Free-text handler con batch + interceptor de modo exclude/transfer.
 //
-// Flow for an already-linked user:
-//   1. Read `ctx.message.text` (skipping commands so /start, /saldo, etc.
-//      can match their own handlers earlier in the chain).
-//   2. Run the AI extractor (Wave 2D). Bail with a helpful hint when the
-//      model returns `type='unknown'` or low confidence.
-//   3. Resolve the user's wallet (default → first non-archived).
-//   4. Resolve the AI's `category_hint` into one of the user's categories.
-//   5. Persist a `telegram_pending` row capturing the suggestion.
-//   6. Reply with the preview + a 3-button inline keyboard whose callback
-//      data carries the pending id. The actual write to `transactions`
-//      happens in `confirm.ts` when the user taps "Confirmar".
+// Flujo:
+//   1. Si hay un "modo" activo en telegram_chat_state (exclude/transfer),
+//      el mensaje se interpreta como input de ese modo y NO se corre AI.
+//   2. Sino, fluye al extractor batch.
+//
+// "Modo exclusión": mensaje debe ser CSV de números o "/cancel".
+// "Modo transfer": el usuario tapea botones inline; cualquier otro texto
+//                  se ignora (mandar /listo o /cancel sale del modo).
 
-import { type Bot, type Context, InlineKeyboard, type NextFunction } from "grammy";
+import { InlineKeyboard, type Bot, type Context, type NextFunction } from "grammy";
 
-import { AiExtractionError, extractFromText } from "@/lib/ai/extract-expense";
+import { AiExtractionError, extractBatchFromText } from "@/lib/ai/extract-expense";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { Database } from "@/lib/supabase/database.types";
 import { resolveCategory } from "@/lib/telegram/category-resolver";
+import { clearAwaiting, getActiveAwaiting } from "@/lib/telegram/chat-state";
+import { deduplicateBatch } from "@/lib/telegram/dedup";
 import { getLinkedUser } from "@/lib/telegram/get-linked-user";
-import { buildPreview } from "@/lib/telegram/preview";
+import {
+  applyDedupFlags,
+  attachMessageIdToBatch,
+  excludeIndices,
+  insertPendingBatch,
+} from "@/lib/telegram/pending-batch";
+import { resolveWalletFromCaption } from "@/lib/telegram/wallet-resolver";
+
+import { renderBatchPreview } from "./batch";
 
 const ONBOARDING_TEXT = "Hola, primero vinculá la cuenta. /start.";
 const MAINTENANCE_TEXT = "Servicio en mantenimiento";
@@ -30,12 +36,6 @@ const GENERIC_ERROR = "Algo falló procesando tu mensaje. Probá de nuevo.";
 const MIN_CONFIDENCE = 0.4;
 
 export function registerTextHandler(bot: Bot): void {
-  // We deliberately use `bot.on("message:text", ...)` and short-circuit on
-  // command messages so command-specific handlers (registered earlier) still
-  // match. grammY runs middleware top-to-bottom, but `bot.command(...)` and
-  // `bot.on("message:text")` are independent matchers — both fire for a
-  // command message. Skipping here lets us treat /start, /saldo, etc. as
-  // "not free-text".
   bot.on("message:text", handleText);
 }
 
@@ -47,23 +47,62 @@ async function handleText(ctx: Context, next: NextFunction): Promise<void> {
     return next();
   }
 
-  // Let commands fall through to other handlers (the catch-all, in
-  // particular, replies with the help text for unknown commands).
   const commandEntities = ctx.entities("bot_command");
-  if (commandEntities.length > 0) {
-    return next();
-  }
 
-  // Pre-provisioning safety: if Supabase env is missing, getLinkedUser
-  // returns null, so we can't distinguish "unlinked" from "not configured".
-  // Treat the missing-env case as a maintenance state and stay silent on
-  // the link copy.
   const supabaseConfigured =
     !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
     !!process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseConfigured) {
-    await ctx.reply(MAINTENANCE_TEXT);
+  if (!supabaseConfigured || !process.env.TELEGRAM_BOT_TOKEN) {
+    if (commandEntities.length === 0) {
+      await ctx.reply(MAINTENANCE_TEXT);
+    }
+    return next();
+  }
+
+  const supabase = createAdminClient();
+
+  // --- Mode interception (exclude / transfer) ---
+  const awaiting = await getActiveAwaiting(supabase, chat.id);
+  if (awaiting) {
+    const text = message.text.trim();
+    if (text === "/cancel" || text === "/listo") {
+      await clearAwaiting(supabase, chat.id);
+      await ctx.reply("Listo, volvé a tapear botones del preview.");
+      return;
+    }
+    if (awaiting.mode === "exclude") {
+      const parsed = /^[\d,\s]+$/.test(text)
+        ? text
+            .split(",")
+            .map((s) => Number.parseInt(s.trim(), 10))
+            .filter((n) => Number.isInteger(n) && n > 0)
+            .map((n) => n - 1)
+        : null;
+      if (!parsed || parsed.length === 0) {
+        await ctx.reply("No entendí. Mandá ej: 3,7,12 o /cancel.");
+        return;
+      }
+      const result = await excludeIndices(supabase, awaiting.batchId, parsed);
+      await clearAwaiting(supabase, chat.id);
+
+      const excludedHuman = result.excluded.map((i) => i + 1).join(",");
+      const notFoundHuman = result.notFound.map((i) => i + 1).join(",");
+      const lines: string[] = [];
+      if (excludedHuman) lines.push(`✏️ Excluí: ${excludedHuman}.`);
+      if (notFoundHuman) lines.push(`No existen: ${notFoundHuman}.`);
+      if (lines.length === 0) lines.push("Nada que excluir.");
+      await ctx.reply(lines.join(" "));
+      await renderBatchPreview(ctx, supabase, awaiting.batchId, chat.id);
+      return;
+    }
+    // mode === 'transfer': free text not interpreted; user uses inline kbd.
+    await ctx.reply("Tapeá los botones para asignar wallet contraparte, o mandame /listo.");
     return;
+  }
+
+  // --- Comandos pasan al chain ---
+  if (commandEntities.length > 0) {
+    return next();
   }
 
   const linked = await getLinkedUser(from.id);
@@ -72,10 +111,9 @@ async function handleText(ctx: Context, next: NextFunction): Promise<void> {
     return;
   }
 
-  // AI env may be missing in pre-provisioning. Catch + degrade quietly.
-  let extraction;
+  let batch;
   try {
-    extraction = await extractFromText(message.text, linked.main_currency);
+    batch = await extractBatchFromText(message.text, linked.main_currency);
   } catch (err) {
     if (err instanceof AiExtractionError) {
       console.error("[telegram/text] AI extraction failed", err);
@@ -86,166 +124,93 @@ async function handleText(ctx: Context, next: NextFunction): Promise<void> {
     return;
   }
 
-  if (extraction.type === "unknown" || extraction.confidence < MIN_CONFIDENCE) {
+  const validItems = batch.items.filter(
+    (i) =>
+      i.type !== "unknown" &&
+      i.amount !== null &&
+      i.amount > 0 &&
+      i.confidence >= MIN_CONFIDENCE,
+  );
+  if (validItems.length === 0) {
     await ctx.reply(NO_UNDERSTAND_TEXT);
     return;
   }
 
-  const supabase = createAdminClient();
-
-  // Wallet resolution: prefer the user's explicit default, else first
-  // non-archived wallet ordered by `position`. Currency is derived from the
-  // wallet (or AI's stated currency, falling back to wallet's) so we never
-  // store a tx in a currency the wallet doesn't transact in.
-  const wallet = await loadWallet(supabase, linked.user_id, linked.default_wallet_id);
-  if (!wallet) {
+  const walletRes = await resolveWalletFromCaption(
+    supabase,
+    linked.user_id,
+    null,
+    linked.default_wallet_id,
+  );
+  if (walletRes.kind === "none") {
     await ctx.reply(NO_WALLET_TEXT);
     return;
   }
 
-  // Category — for income/expense the resolver matches against the user's
-  // categories filtered by `type`. `extraction.type` is guaranteed to be
-  // 'expense' | 'income' here (we filtered 'unknown' above).
-  const txType = extraction.type as "expense" | "income";
-  const category = await resolveCategory(
-    supabase,
-    linked.user_id,
-    txType,
-    extraction.category_hint,
+  const itemsForInsert = await Promise.all(
+    validItems.map(async (item) => {
+      const cat = await resolveCategory(
+        supabase,
+        linked.user_id,
+        item.type === "income" ? "income" : "expense",
+        item.category_hint,
+        item.subcategory_hint,
+      );
+      return { item, categoryId: cat.id, photoPath: null };
+    }),
   );
 
-  // Insert the pending row. `extraction` is stored as-is so the confirm
-  // handler has the full payload (and we can audit AI behaviour later).
-  const { data: pending, error: pendingError } = await insertPending(
-    supabase,
-    linked.user_id,
-    chat.id,
-    extraction,
-    wallet.id,
-    category.id,
-    "telegram_text",
-    null,
-  );
+  const walletId = walletRes.kind === "resolved" ? walletRes.wallet.id : null;
 
-  if (pendingError || !pending) {
-    console.error("[telegram/text] pending insert failed", pendingError);
+  const inserted = await insertPendingBatch(supabase, {
+    userId: linked.user_id,
+    telegramChatId: chat.id,
+    source: "telegram_text",
+    walletId,
+    items: itemsForInsert,
+  });
+  if (!inserted) {
     await ctx.reply(GENERIC_ERROR);
     return;
   }
 
-  const preview = buildPreview(
-    extraction,
-    wallet.name,
-    wallet.currency,
-    category.label,
-    false,
-    "telegram_text",
-  );
-
-  const keyboard = buildConfirmKeyboard(pending.id);
-  await ctx.reply(preview.text, {
-    parse_mode: preview.markdown,
-    reply_markup: keyboard,
-  });
-}
-
-// ----- shared helpers (also used by photo / voice) --------------------------
-
-/**
- * Resolve a usable wallet for the given user. Prefers the configured
- * default; falls back to the first non-archived wallet ordered by
- * `position`. Returns `null` if the user has no wallets at all.
- */
-export async function loadWallet(
-  supabase: ReturnType<typeof createAdminClient>,
-  userId: string,
-  defaultWalletId: string | null,
-): Promise<{
-  id: string;
-  name: string;
-  currency: string;
-} | null> {
-  if (defaultWalletId) {
-    const { data, error } = await supabase
-      .from("wallets")
-      .select("id, name, currency, archived")
-      .eq("id", defaultWalletId)
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (!error && data && !data.archived) {
-      return { id: data.id, name: data.name, currency: data.currency };
+  if (walletRes.kind === "resolved") {
+    const dedup = await deduplicateBatch(
+      supabase,
+      linked.user_id,
+      walletRes.wallet.id,
+      validItems,
+      inserted.batchId,
+    );
+    await applyDedupFlags(supabase, inserted.batchId, dedup);
+    const lastMessageId = await renderBatchPreview(ctx, supabase, inserted.batchId, chat.id);
+    if (lastMessageId) {
+      await attachMessageIdToBatch(supabase, inserted.batchId, lastMessageId);
     }
+  } else {
+    const keyboard = {
+      inline_keyboard: walletRes.candidates.map((w) => [
+        { text: w.name, callback_data: `bwallet:${inserted.batchId}:${w.id}` },
+      ]),
+    };
+    const reply = await ctx.reply(
+      `📋 Encontré ${validItems.length} ${validItems.length === 1 ? "movimiento" : "movimientos"}. ¿A qué wallet van?`,
+      { reply_markup: keyboard },
+    );
+    await attachMessageIdToBatch(supabase, inserted.batchId, reply.message_id);
   }
-
-  const { data, error } = await supabase
-    .from("wallets")
-    .select("id, name, currency")
-    .eq("user_id", userId)
-    .eq("archived", false)
-    .order("position", { ascending: true })
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  if (error || !data) return null;
-  return { id: data.id, name: data.name, currency: data.currency };
 }
 
-/**
- * Insert a `telegram_pending` row and return the new id. The admin
- * client's typed schema doesn't include `telegram_pending` yet
- * (`database.types.ts` is owned by another track and was hand-written
- * before this migration); we cast the table name to keep the call typed
- * without modifying that file. The runtime contract matches
- * `supabase/migrations/0008_telegram_pending.sql`.
- */
-export async function insertPending(
-  supabase: ReturnType<typeof createAdminClient>,
-  userId: string,
-  telegramChatId: number,
-  extraction: unknown,
-  suggestedWalletId: string | null,
-  suggestedCategoryId: string | null,
-  source: Database["public"]["Enums"]["tx_source"],
-  photoPath: string | null,
-): Promise<{ data: { id: string } | null; error: unknown }> {
-  const row = {
-    user_id: userId,
-    telegram_chat_id: telegramChatId,
-    extraction,
-    photo_path: photoPath,
-    suggested_wallet_id: suggestedWalletId,
-    suggested_category_id: suggestedCategoryId,
-    source,
-  };
-  // Cast to a permissive supabase reference so the unlisted table compiles.
-  // See note above the function signature.
-  const { data, error } = await (
-    supabase as unknown as {
-      from: (t: string) => {
-        insert: (r: unknown) => {
-          select: (cols: string) => {
-            single: () => Promise<{
-              data: { id: string } | null;
-              error: unknown;
-            }>;
-          };
-        };
-      };
-    }
-  )
-    .from("telegram_pending")
-    .insert(row)
-    .select("id")
-    .single();
-  return { data, error };
-}
+// =============================================================================
+// Legacy export — used by `confirm.ts` to rebuild the 3-button keyboard when
+// the user taps "Editar" on a pending row from the OLD single-item flow.
+// New batch flow uses inline keyboards built inside `batch.ts`.
+// =============================================================================
 
-/** Build the standard 3-button confirm/edit/cancel keyboard. */
+/** Build the standard 3-button confirm/edit/cancel keyboard (legacy single-item flow). */
 export function buildConfirmKeyboard(pendingId: string): InlineKeyboard {
   return new InlineKeyboard()
     .text("✅ Confirmar", `confirm:${pendingId}`)
     .text("✏️ Editar", `edit:${pendingId}`)
     .text("❌ Cancelar", `cancel:${pendingId}`);
 }
-

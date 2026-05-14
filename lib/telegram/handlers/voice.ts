@@ -1,24 +1,26 @@
-// Voice / audio handler.
+// Voice / audio handler — batch flow.
 //
-// We register against BOTH `message:voice` (the "hold-to-record" mic note,
-// always .ogg/opus) and `message:audio` (uploaded music/podcast files —
-// mime varies). Either way the flow is identical: download the bytes, hand
-// them to the AI extractor, and persist a `telegram_pending` row.
-//
-// Unlike the photo flow we do NOT persist the audio: voice notes are
-// considered ephemeral (the user already heard themselves saying it).
-// If we ever want to keep them, the pattern from `photo.ts` carries over.
+// Registers against BOTH `message:voice` (mic note, .ogg/opus) and
+// `message:audio` (uploaded files, mime varies). Audio uploads can carry a
+// caption; we pass it to the wallet resolver. Voice notes have no caption,
+// so wallet resolution falls back to default.
 
 import type { Bot, Context } from "grammy";
 
-import { AiExtractionError, extractFromAudio } from "@/lib/ai/extract-expense";
+import { AiExtractionError, extractBatchFromAudio } from "@/lib/ai/extract-expense";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveCategory } from "@/lib/telegram/category-resolver";
+import { deduplicateBatch } from "@/lib/telegram/dedup";
 import { getLinkedUser } from "@/lib/telegram/get-linked-user";
-import { buildPreview } from "@/lib/telegram/preview";
+import {
+  applyDedupFlags,
+  attachMessageIdToBatch,
+  insertPendingBatch,
+} from "@/lib/telegram/pending-batch";
 import { fetchTelegramFile } from "@/lib/telegram/storage-helpers";
+import { resolveWalletFromCaption } from "@/lib/telegram/wallet-resolver";
 
-import { buildConfirmKeyboard, insertPending, loadWallet } from "./text";
+import { renderBatchPreview } from "./batch";
 
 const ONBOARDING_TEXT = "Hola, primero vinculá la cuenta. /start.";
 const MAINTENANCE_TEXT = "Servicio en mantenimiento";
@@ -29,8 +31,6 @@ const GENERIC_ERROR = "Algo falló procesando el audio. Probá de nuevo.";
 const MIN_CONFIDENCE = 0.4;
 
 export function registerVoiceHandler(bot: Bot): void {
-  // Both filters point at the same handler. grammY treats this as a logical
-  // OR — the handler fires for any update matching either filter.
   bot.on(["message:voice", "message:audio"], handleVoice);
 }
 
@@ -54,20 +54,11 @@ async function handleVoice(ctx: Context): Promise<void> {
     return;
   }
 
-  // Pick whichever attachment is present. Voice notes are .ogg/opus and
-  // Telegram doesn't always set mime_type; we default to audio/ogg. For
-  // uploaded audio files we honour the declared mime.
-  const fileId =
-    message.voice?.file_id ?? message.audio?.file_id ?? null;
+  const fileId = message.voice?.file_id ?? message.audio?.file_id ?? null;
   const mimeType =
-    message.voice?.mime_type ??
-    message.audio?.mime_type ??
-    "audio/ogg";
-  if (!fileId) {
-    return;
-  }
+    message.voice?.mime_type ?? message.audio?.mime_type ?? "audio/ogg";
+  if (!fileId) return;
 
-  // Fetch the bytes from the Telegram file endpoint.
   let bytes: Uint8Array;
   try {
     const file = await ctx.api.getFile(fileId);
@@ -79,11 +70,9 @@ async function handleVoice(ctx: Context): Promise<void> {
     return;
   }
 
-  // Run the AI extraction. The provider may not support all audio mimes;
-  // we let it fail and degrade with a generic error if so.
-  let extraction;
+  let batch;
   try {
-    extraction = await extractFromAudio(
+    batch = await extractBatchFromAudio(
       { data: bytes, mimeType },
       linked.main_currency,
     );
@@ -97,54 +86,80 @@ async function handleVoice(ctx: Context): Promise<void> {
     return;
   }
 
-  if (extraction.type === "unknown" || extraction.confidence < MIN_CONFIDENCE) {
+  const validItems = batch.items.filter(
+    (i) =>
+      i.type !== "unknown" &&
+      i.amount !== null &&
+      i.amount > 0 &&
+      i.confidence >= MIN_CONFIDENCE,
+  );
+  if (validItems.length === 0) {
     await ctx.reply(NO_UNDERSTAND_TEXT);
     return;
   }
 
   const supabase = createAdminClient();
-
-  const wallet = await loadWallet(supabase, linked.user_id, linked.default_wallet_id);
-  if (!wallet) {
+  const walletRes = await resolveWalletFromCaption(
+    supabase,
+    linked.user_id,
+    message.caption ?? null,
+    linked.default_wallet_id,
+  );
+  if (walletRes.kind === "none") {
     await ctx.reply(NO_WALLET_TEXT);
     return;
   }
 
-  const txType = extraction.type as "expense" | "income";
-  const category = await resolveCategory(
-    supabase,
-    linked.user_id,
-    txType,
-    extraction.category_hint,
+  const itemsForInsert = await Promise.all(
+    validItems.map(async (item) => {
+      const cat = await resolveCategory(
+        supabase,
+        linked.user_id,
+        item.type === "income" ? "income" : "expense",
+        item.category_hint,
+        item.subcategory_hint,
+      );
+      return { item, categoryId: cat.id, photoPath: null };
+    }),
   );
 
-  const { data: pending, error: pendingError } = await insertPending(
-    supabase,
-    linked.user_id,
-    chat.id,
-    extraction,
-    wallet.id,
-    category.id,
-    "telegram_audio",
-    null,
-  );
-  if (pendingError || !pending) {
-    console.error("[telegram/voice] pending insert failed", pendingError);
+  const walletId = walletRes.kind === "resolved" ? walletRes.wallet.id : null;
+
+  const inserted = await insertPendingBatch(supabase, {
+    userId: linked.user_id,
+    telegramChatId: chat.id,
+    source: "telegram_audio",
+    walletId,
+    items: itemsForInsert,
+  });
+  if (!inserted) {
     await ctx.reply(GENERIC_ERROR);
     return;
   }
 
-  const preview = buildPreview(
-    extraction,
-    wallet.name,
-    wallet.currency,
-    category.label,
-    false,
-    "telegram_audio",
-  );
-
-  await ctx.reply(preview.text, {
-    parse_mode: preview.markdown,
-    reply_markup: buildConfirmKeyboard(pending.id),
-  });
+  if (walletRes.kind === "resolved") {
+    const dedup = await deduplicateBatch(
+      supabase,
+      linked.user_id,
+      walletRes.wallet.id,
+      validItems,
+      inserted.batchId,
+    );
+    await applyDedupFlags(supabase, inserted.batchId, dedup);
+    const lastMessageId = await renderBatchPreview(ctx, supabase, inserted.batchId, chat.id);
+    if (lastMessageId) {
+      await attachMessageIdToBatch(supabase, inserted.batchId, lastMessageId);
+    }
+  } else {
+    const keyboard = {
+      inline_keyboard: walletRes.candidates.map((w) => [
+        { text: w.name, callback_data: `bwallet:${inserted.batchId}:${w.id}` },
+      ]),
+    };
+    const reply = await ctx.reply(
+      `📋 Encontré ${validItems.length} ${validItems.length === 1 ? "movimiento" : "movimientos"}. ¿A qué wallet van?`,
+      { reply_markup: keyboard },
+    );
+    await attachMessageIdToBatch(supabase, inserted.batchId, reply.message_id);
+  }
 }

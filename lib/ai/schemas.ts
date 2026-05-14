@@ -27,12 +27,10 @@ export const CATEGORY_HINTS = [
 export type CategoryHint = (typeof CATEGORY_HINTS)[number];
 
 /**
- * Structured output produced by the AI extractor from text, image or audio
- * input. All "unknown" fields must be `null` (never empty strings) so the
- * caller can clearly differentiate "model could not infer this" from a real
- * empty value.
+ * One movement extracted from any input source. The bot persists one row in
+ * `telegram_pending` per item; a batch of N items shares a `batch_id`.
  */
-export const ExpenseExtractionSchema = z.object({
+export const ExpenseItemSchema = z.object({
   type: z
     .enum(["expense", "income", "unknown"])
     .describe(
@@ -60,12 +58,19 @@ export const ExpenseExtractionSchema = z.object({
     .string()
     .max(200)
     .nullable()
-    .describe("Resumen corto del gasto/ingreso. Máx 200 chars."),
+    .describe("Resumen corto o concepto crudo (ej: 'CPA. PEDIDOSYA MI BARRIO'). Máx 200 chars."),
   category_hint: z
     .enum(CATEGORY_HINTS)
     .nullable()
     .describe(
-      "Slug de categoría sugerida. Debe ser uno de la lista canónica o null.",
+      "Slug de categoría top-level sugerida. Debe ser uno de la lista canónica o null.",
+    ),
+  subcategory_hint: z
+    .string()
+    .max(40)
+    .nullable()
+    .describe(
+      "Texto libre, una palabra/frase en minúsculas (ej: 'café', 'supermercado', 'comida rápida'). null si no se puede afinar.",
     ),
   occurred_at: z
     .string()
@@ -74,11 +79,51 @@ export const ExpenseExtractionSchema = z.object({
     .describe(
       "Fecha y hora ISO 8601 cuando ocurrió. null = usar 'ahora' al persistir.",
     ),
+  transfer_hint: z
+    .boolean()
+    .describe(
+      "true si el concepto sugiere transferencia interna entre wallets propias (DEBIN, TRANSFERENCIA PUSH, INGRESO DE DINERO, CREDITO INMEDIATO, etc.).",
+    ),
+  external_id: z
+    .string()
+    .max(120)
+    .nullable()
+    .describe("ID externo si la fuente lo muestra (ej: número de comprobante MP). null si no aparece."),
   confidence: z
     .number()
     .min(0)
     .max(1)
-    .describe("Confianza de la extracción, entre 0 y 1."),
+    .describe("Confianza de la extracción del item, entre 0 y 1."),
 });
 
-export type ExpenseExtraction = z.infer<typeof ExpenseExtractionSchema>;
+export type ExpenseItem = z.infer<typeof ExpenseItemSchema>;
+
+/**
+ * Backwards-compat alias. Old code (handlers single, web app) imports
+ * `ExpenseExtraction`. We keep the type around so the diff stays surgical.
+ */
+export const ExpenseExtractionSchema = ExpenseItemSchema;
+export type ExpenseExtraction = ExpenseItem;
+
+export const SourceKindSchema = z.enum([
+  "receipt",
+  "bank_statement",
+  "wallet_app_feed",
+  "free_text",
+  "unknown",
+]);
+
+export type SourceKind = z.infer<typeof SourceKindSchema>;
+
+/**
+ * Output of the batch extractor. `items=[]` plus `source_kind='unknown'`
+ * means the AI couldn't make sense of the input. A receipt (1 item) and a
+ * bank statement (24 items) share this shape — handlers branch on
+ * `items.length`.
+ */
+export const ExpenseBatchExtractionSchema = z.object({
+  source_kind: SourceKindSchema,
+  items: z.array(ExpenseItemSchema).max(100),
+});
+
+export type ExpenseBatchExtraction = z.infer<typeof ExpenseBatchExtractionSchema>;
