@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { AppSidebar } from "@/components/shared/app-sidebar";
 import { BottomNav } from "@/components/shared/bottom-nav";
+import { CommandPalette } from "@/components/shared/command-palette";
 import { NewTransactionTrigger } from "@/components/shared/new-transaction-trigger";
 import {
   SidebarInset,
@@ -41,6 +42,7 @@ export default async function AppLayout({
       </SidebarInset>
       <BottomNav userEmail={userEmail} />
       <NewTransactionTrigger />
+      <CommandPalette />
     </SidebarProvider>
   );
 }

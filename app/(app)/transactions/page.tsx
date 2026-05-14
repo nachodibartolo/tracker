@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { CaretLeft, CaretRight } from "@phosphor-icons/react/dist/ssr";
+import { CaretLeft, CaretRight, Receipt } from "@phosphor-icons/react/dist/ssr";
 
+import { EmptyState } from "@/components/shared/empty-state";
 import { MobileHeader } from "@/components/shared/mobile-header";
 import { NewTransactionTrigger } from "@/components/shared/new-transaction-trigger";
 import { TransactionFilters } from "@/components/transactions/transaction-filters";
@@ -175,9 +176,11 @@ function EmptyShell() {
             {t.nav.transactions}
           </h1>
         </div>
-        <div className="rounded-2xl border border-dashed border-border bg-card/30 px-6 py-12 text-center text-sm text-muted-foreground">
-          Necesitamos conectar Supabase para listar transacciones.
-        </div>
+        <EmptyState
+          icon={Receipt}
+          title="Conectá Supabase"
+          description="Necesitamos conectar Supabase para listar transacciones."
+        />
       </div>
     </>
   );

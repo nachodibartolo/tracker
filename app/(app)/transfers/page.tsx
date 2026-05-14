@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { CaretLeft, CaretRight } from "@phosphor-icons/react/dist/ssr";
+import { ArrowsLeftRight, CaretLeft, CaretRight } from "@phosphor-icons/react/dist/ssr";
 
+import { EmptyState } from "@/components/shared/empty-state";
 import { MobileHeader } from "@/components/shared/mobile-header";
 import { NewTransferButton } from "@/components/transfers/new-transfer-button";
 import { TransferFilters } from "@/components/transfers/transfer-filters";
@@ -151,9 +152,11 @@ function EmptyShell() {
             {t.nav.transfers}
           </h1>
         </div>
-        <div className="rounded-2xl border border-dashed border-border bg-card/30 px-6 py-12 text-center text-sm text-muted-foreground">
-          Necesitamos conectar Supabase para listar transferencias.
-        </div>
+        <EmptyState
+          icon={ArrowsLeftRight}
+          title="Conectá Supabase"
+          description="Necesitamos conectar Supabase para listar transferencias."
+        />
       </div>
     </>
   );
