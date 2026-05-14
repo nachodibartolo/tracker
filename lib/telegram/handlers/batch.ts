@@ -151,6 +151,10 @@ async function handleConfirm(
   includeDuplicates: boolean,
 ): Promise<void> {
   const batchId = data.split(":")[1];
+  if (!batchId) {
+    await ctx.answerCallbackQuery({ text: ERROR_TEXT });
+    return;
+  }
   const chatId = ctx.chat!.id;
   const rows = await loadBatch(supabase, batchId, chatId);
   if (rows.length === 0) {
@@ -194,7 +198,8 @@ async function handleConfirm(
   } catch (err) {
     console.error("[telegram/batch] edit after confirm failed", err);
   }
-  await ctx.answerCallbackQuery({ text: "Listo" });
+  const toast = failed > 0 ? `Algunos fallaron (${failed})` : "Listo";
+  await ctx.answerCallbackQuery({ text: toast });
 }
 
 async function persistExpenseIncome(
@@ -314,6 +319,10 @@ async function handleEnterExclude(
   data: string,
 ): Promise<void> {
   const batchId = data.split(":")[1];
+  if (!batchId) {
+    await ctx.answerCallbackQuery({ text: ERROR_TEXT });
+    return;
+  }
   const chatId = ctx.chat!.id;
   const ok = await setAwaitingMode(supabase, chatId, "exclude", batchId);
   if (!ok) {
