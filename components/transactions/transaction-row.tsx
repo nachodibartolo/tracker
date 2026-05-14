@@ -120,7 +120,7 @@ export function TransactionRow({ row, className }: TransactionRowProps) {
       >
         <Link
           href={`/transactions/${row.id}`}
-          className="flex flex-1 items-center gap-3 outline-none"
+          className="flex min-w-0 flex-1 items-center gap-3 outline-none"
           aria-label={`Editar ${row.description ?? row.payee ?? "transacción"}`}
           onPointerDown={startLongPress}
           onPointerUp={cancelLongPress}
