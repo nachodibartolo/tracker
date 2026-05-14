@@ -129,6 +129,7 @@ export const t = {
   },
   common: {
     loading: "Cargando…",
+    saving: "Guardando…",
     empty: "Nada por aquí todavía",
     error: "Ocurrió un error",
     saved: "Guardado",

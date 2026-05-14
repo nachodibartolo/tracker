@@ -51,14 +51,14 @@ export function QuickCategoryEdit({
   const [subId, setSubId] = React.useState<string | null>(null);
   const [pending, startTransition] = React.useTransition();
 
-  // Lazy fetch al primer open.
+  // Lazy fetch al primer open. Las setState live dentro del async IIFE para
+  // que el cuerpo del effect no dispare cascading renders (react-hooks/set-state-in-effect).
   React.useEffect(() => {
     if (!open || categories !== null || loading) return;
     let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    setLoadError(null);
     void (async () => {
+      setLoading(true);
+      setLoadError(null);
       const result = await getMyCategoryOptions(txType);
       if (cancelled) return;
       if (result.ok) {
@@ -148,7 +148,7 @@ export function QuickCategoryEdit({
     >
       <div className="space-y-4">
         {loading ? (
-          <p className="text-sm text-muted-foreground">Cargando categorías…</p>
+          <p className="text-sm text-muted-foreground">{t.common.loading}</p>
         ) : loadError ? (
           <p className="text-sm text-destructive">{loadError}</p>
         ) : (
@@ -255,7 +255,7 @@ export function QuickCategoryEdit({
             onClick={handleSubmit}
             disabled={pending || loading || loadError !== null}
           >
-            {pending ? "Guardando…" : t.actions.save}
+            {pending ? t.common.saving : t.actions.save}
           </Button>
         </div>
       </div>
