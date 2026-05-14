@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createMovementsTool } from "@/lib/ai/agent/tools/movements";
+import { createMovementsTool, updateMovementTool } from "@/lib/ai/agent/tools/movements";
 
 function makeCtx() {
   const inserted = [
@@ -53,6 +53,83 @@ function makeCtx() {
     ]),
   };
 }
+
+describe("update_movement", () => {
+  it("reads before-state, updates, and logs action", async () => {
+    const before = {
+      id: "tx-1",
+      user_id: "u",
+      wallet_id: "w",
+      amount: 200,
+      currency: "ARS",
+      payee: "Café",
+      description: null,
+      occurred_at: "2026-05-14T15:00:00Z",
+      category_id: "cat-comida",
+      type: "expense",
+    };
+    const after = { ...before, amount: 250 };
+
+    let stage = 0;
+    const supabase = {
+      from: vi.fn((table: string) => {
+        if (table === "transactions") {
+          stage += 1;
+          if (stage === 1) {
+            // SELECT before
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    single: vi
+                      .fn()
+                      .mockResolvedValue({ data: before, error: null }),
+                  }),
+                }),
+              }),
+            };
+          }
+          // UPDATE
+          return {
+            update: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  select: vi.fn().mockReturnValue({
+                    single: vi
+                      .fn()
+                      .mockResolvedValue({ data: after, error: null }),
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === "telegram_agent_actions") {
+          return {
+            insert: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnValue({
+                single: vi
+                  .fn()
+                  .mockResolvedValue({ data: { id: "act-2" }, error: null }),
+              }),
+            }),
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+    };
+
+    const tool = updateMovementTool({
+      supabase: supabase as never,
+      userId: "u",
+      chatId: 123,
+      mainCurrency: "ARS",
+    });
+    const out = await tool.execute({ id: "tx-1", patch: { amount: 250 } });
+    expect(out.id).toBe("tx-1");
+    expect(out.amount).toBe(250);
+  });
+});
 
 describe("create_movements", () => {
   it("inserts non-duplicate items and returns ids", async () => {

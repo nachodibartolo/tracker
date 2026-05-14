@@ -152,3 +152,63 @@ export function createMovementsTool(ctx: MovementsCtx) {
     },
   });
 }
+
+// Append to lib/ai/agent/tools/movements.ts after createMovementsTool.
+
+const UpdateInput = z.object({
+  id: z.string().uuid(),
+  patch: z
+    .object({
+      amount: z.number().positive().multipleOf(0.01).optional(),
+      currency: z.string().regex(/^[A-Z]{3}$/u).optional(),
+      payee: z.string().max(80).nullable().optional(),
+      description: z.string().max(200).nullable().optional(),
+      category_id: z.string().uuid().nullable().optional(),
+      occurred_at: z.string().datetime({ offset: true }).optional(),
+      wallet_id: z.string().uuid().optional(),
+      type: z.enum(["expense", "income", "transfer"]).optional(),
+    })
+    .refine((p) => Object.keys(p).length > 0, { message: "patch vacío" }),
+});
+
+export function updateMovementTool(ctx: MovementsCtx) {
+  return tool({
+    description:
+      "Modifica un movimiento existente. Antes de llamar, asegurate de tener el id correcto (usá `search_transactions` o `list_recent` para encontrarlo).",
+    inputSchema: UpdateInput,
+    execute: async (input) => {
+      const { data: before, error: readErr } = await ctx.supabase
+        .from("transactions")
+        .select("*")
+        .eq("id", input.id)
+        .eq("user_id", ctx.userId)
+        .single();
+      if (readErr || !before) {
+        throw new Error(`update_movement: transacción ${input.id} no encontrada`);
+      }
+
+      const { data: after, error: upErr } = await ctx.supabase
+        .from("transactions")
+        .update(input.patch)
+        .eq("id", input.id)
+        .eq("user_id", ctx.userId)
+        .select("*")
+        .single();
+      if (upErr || !after) {
+        throw new Error(`update_movement failed: ${upErr?.message ?? "no row returned"}`);
+      }
+
+      await logAction(ctx.supabase, {
+        userId: ctx.userId,
+        chatId: ctx.chatId,
+        actionType: "update",
+        targetIds: [input.id],
+        beforePayload: before,
+        afterPayload: after,
+        agentSummary: `actualizó ${input.id}`,
+      });
+
+      return after;
+    },
+  });
+}
