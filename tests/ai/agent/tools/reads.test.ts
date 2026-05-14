@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { runTool } from "@/tests/helpers/tool";
 import {
   listCategoriesTool,
   listRecentTool,
@@ -48,7 +49,7 @@ describe("list_wallets", () => {
     ];
     const supabase = { from: vi.fn(() => builderOf(wallets)) };
     const tool = listWalletsTool({ supabase: supabase as never, userId: "u" });
-    const out = await tool.execute({});
+    const out = await runTool(tool, {});
     expect(out.length).toBe(2);
   });
 });
@@ -60,7 +61,7 @@ describe("list_categories", () => {
     ];
     const supabase = { from: vi.fn(() => builderOf(cats)) };
     const tool = listCategoriesTool({ supabase: supabase as never, userId: "u" });
-    const out = await tool.execute({ type: "expense" });
+    const out = await runTool(tool, { type: "expense" });
     expect(out[0].name).toBe("Comida");
   });
 });
@@ -72,7 +73,7 @@ describe("list_recent", () => {
     ];
     const supabase = { from: vi.fn(() => builderOf(rows)) };
     const tool = listRecentTool({ supabase: supabase as never, userId: "u" });
-    const out = await tool.execute({});
+    const out = await runTool(tool, {});
     expect(out.length).toBe(1);
   });
 });
@@ -90,7 +91,7 @@ describe("search_transactions", () => {
     ];
     const supabase = { from: vi.fn(() => builderOf(rows)) };
     const tool = searchTransactionsTool({ supabase: supabase as never, userId: "u" });
-    const out = await tool.execute({ query: "café" });
+    const out = await runTool(tool, { query: "café" });
     expect(out.length).toBe(1);
   });
 });
@@ -113,7 +114,7 @@ describe("get_balance", () => {
       }),
     };
     const tool = getBalanceTool({ supabase: supabase as never, userId: "u" });
-    const out = await tool.execute({});
+    const out = await runTool(tool, {});
     const w1 = out.wallets.find((w) => w.id === "w1");
     const w2 = out.wallets.find((w) => w.id === "w2");
     expect(w1?.balance).toBe(-200);

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { runTool } from "@/tests/helpers/tool";
 import {
   runReadonlySqlTool,
   validateSelectOnly,
@@ -62,7 +63,7 @@ describe("run_readonly_sql tool", () => {
       userId: "u-1",
       chatId: 123,
     });
-    const out = await tool.execute({
+    const out = await runTool(tool, {
       sql: "SELECT sum(amount) AS total FROM transactions WHERE user_id = $1",
       why: "user pidió total gastado",
     });

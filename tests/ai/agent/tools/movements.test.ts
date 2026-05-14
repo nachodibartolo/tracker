@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createMovementsTool, deleteMovementTool, updateMovementTool } from "@/lib/ai/agent/tools/movements";
+import { runTool } from "@/tests/helpers/tool";
 
 function makeCtx() {
   const inserted = [
@@ -125,7 +126,7 @@ describe("update_movement", () => {
       chatId: 123,
       mainCurrency: "ARS",
     });
-    const out = await tool.execute({ id: "tx-1", patch: { amount: 250 } });
+    const out = await runTool(tool, { id: "tx-1", patch: { amount: 250 } });
     expect(out.id).toBe("tx-1");
     expect(out.amount).toBe(250);
   });
@@ -184,7 +185,7 @@ describe("delete_movement", () => {
       chatId: 123,
       mainCurrency: "ARS",
     });
-    const out = await tool.execute({ id: "tx-1" });
+    const out = await runTool(tool, { id: "tx-1" });
     expect(out.deleted).toBe(true);
   });
 });
@@ -193,7 +194,7 @@ describe("create_movements", () => {
   it("inserts non-duplicate items and returns ids", async () => {
     const ctx = makeCtx();
     const tool = createMovementsTool(ctx);
-    const result = await tool.execute({
+    const result = await runTool(tool, {
       items: [
         {
           type: "expense",
