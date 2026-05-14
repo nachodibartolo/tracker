@@ -8,6 +8,64 @@ import {
 } from "./schemas";
 
 /**
+ * Internal-transfer hint keywords. The AI marks `transfer_hint=true` when a
+ * concept contains any of these substrings (case-insensitive, accent-insensitive).
+ * Listed in the system prompt so the model has explicit guidance instead of
+ * inferring from context.
+ */
+const INTERNAL_TRANSFER_HINTS = [
+  // homebanking
+  "DEBIN",
+  "TRANSFERENCIA PUSH",
+  "CREDITO INMEDIATO",
+  "DEB PREA",
+  "PAGO PERSONAL",
+  "TRANSFERENCIA RECIBIDA",
+  "TRANSFERENCIA ENVIADA",
+  // wallet apps
+  "INGRESO DE DINERO",
+];
+
+/**
+ * Argentine merchant normalization patterns. Listed in the system prompt so
+ * the AI normalizes payees and categories consistently. Each entry: pattern
+ * (substring match, case-insensitive) → payee, category_hint, subcategory_hint.
+ */
+const ARGENTINE_PAYEES = `
+- CPA. PEDIDOSYA *      → payee="PedidosYa", category="comida", subcategory="comida rápida"
+- CPA. MAKRO *          → payee="Makro", category="comida", subcategory="supermercado"
+- CPA. COTO *           → payee="Coto", category="comida", subcategory="supermercado"
+- CPA. CARREFOUR *      → payee="Carrefour", category="comida", subcategory="supermercado"
+- CPA. DISCO *          → payee="Disco", category="comida", subcategory="supermercado"
+- CPA. EDENOR* / EDESUR*  → payee="<empresa>", category="servicios"
+- CPA. TELECOM* / MOVISTAR* / PERSONAL* / CLARO*  → payee="<empresa>", category="servicios"
+- CPA. METROGAS* / NATURGY*  → payee="<empresa>", category="servicios"
+- CPA. AYSA*            → payee="AySA", category="servicios"
+- CPA. APPLE.COM/BILL / SPOTIFY* / NETFLIX* / DISNEY* / HBO* → payee="<empresa>", category="entretenimiento"
+- CPA. UBER* / CABIFY*  → payee="<empresa>", category="transporte"
+- CPA. SUBE*            → payee="SUBE", category="transporte"
+- CPA. CLUB LA NACION   → payee="Club La Nación", category="entretenimiento"
+- CPA. ABL *            → payee="ABL (rentas CABA)", category="hogar"
+- CPA. BOOT.DEV / UDEMY* → category="educacion"
+- IVA SERV DIG EXT      → payee="AFIP - IVA", category="otros"
+- PERCEPCION TD RG 4815/20 → payee="AFIP - percepción", category="otros"
+- PERCEPCION IIBB       → payee="IIBB - percepción", category="otros"
+`;
+
+/**
+ * Tz-aware "today" for the AI. Used in the system prompt so the model can
+ * resolve relative dates and decide the year for DD/MM/AA fields.
+ */
+function currentDateLine(): string {
+  const now = new Date();
+  const iso = now.toISOString();
+  const yearLocal = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+  }).format(now);
+  return `currentDate (UTC ISO): ${iso}. Current year in Argentina: ${yearLocal.slice(0, 4)}.`;
+}
+
+/**
  * Typed error surfaced by every extractor. The cause (the original SDK /
  * network / validation error) is preserved for logging.
  */
