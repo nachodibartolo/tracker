@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { DotsThreeVertical, Pencil, Tag, Trash } from "@phosphor-icons/react";
+import { ArrowDown, ArrowUp, DotsThreeVertical, Pencil, Tag, Trash } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 import { deleteTransaction } from "@/actions/transactions";
@@ -106,7 +106,9 @@ export function TransactionRow({ row, className }: TransactionRowProps) {
   }, [row.id, router]);
 
   const CategoryIcon = row.category ? getCategoryIcon(row.category.icon) : null;
-  const isIncome = row.type === "income";
+  const isTransfer = row.type === "transfer";
+  const isOutgoing = isTransfer && row.transfer_direction === "out";
+  const isIncome = !isTransfer && row.type === "income";
 
   return (
     <>
@@ -118,58 +120,100 @@ export function TransactionRow({ row, className }: TransactionRowProps) {
       >
         <Link
           href={`/transactions/${row.id}`}
-          className="flex flex-1 items-center gap-3 outline-none"
-          aria-label={`Editar ${row.description ?? row.payee ?? "transacción"}`}
+          className="flex min-w-0 flex-1 items-center gap-3 outline-none"
+          aria-label={
+            isTransfer
+              ? row.counterpartWallet
+                ? `${isOutgoing ? t.transaction.transferTo : t.transaction.transferFrom} ${row.counterpartWallet.name}`
+                : t.transaction.transfer
+              : `Editar ${row.description ?? row.payee ?? "transacción"}`
+          }
           onPointerDown={startLongPress}
           onPointerUp={cancelLongPress}
           onPointerLeave={cancelLongPress}
           onPointerCancel={cancelLongPress}
           onClickCapture={onClickCapture}
         >
-          {/* Category icon */}
-          <span
-            aria-hidden
-            className="flex size-11 flex-shrink-0 items-center justify-center rounded-full text-white shadow-sm"
-            style={{
-              backgroundColor: row.category?.color ?? "#64748b",
-            }}
-          >
-            {CategoryIcon ? (
-              <CategoryIcon className="size-5" weight="fill" />
-            ) : (
-              <span aria-hidden className="text-xs font-semibold">
-                {isIncome ? "+" : "-"}
-              </span>
-            )}
-          </span>
+          {/* Icon: category color for expense/income, neutral gray with
+              direction arrow for transfer legs. */}
+          {isTransfer ? (
+            <span
+              aria-hidden
+              className="flex size-11 flex-shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground shadow-sm"
+            >
+              {isOutgoing ? (
+                <ArrowUp className="size-5" weight="bold" />
+              ) : (
+                <ArrowDown className="size-5" weight="bold" />
+              )}
+            </span>
+          ) : (
+            <span
+              aria-hidden
+              className="flex size-11 flex-shrink-0 items-center justify-center rounded-full text-white shadow-sm"
+              style={{
+                backgroundColor: row.category?.color ?? "#64748b",
+              }}
+            >
+              {CategoryIcon ? (
+                <CategoryIcon className="size-5" weight="fill" />
+              ) : (
+                <span aria-hidden className="text-xs font-semibold">
+                  {isIncome ? "+" : "-"}
+                </span>
+              )}
+            </span>
+          )}
 
-          {/* Description / payee */}
+          {/* Description / payee. Transfers get a counterpart-aware title;
+              everything else keeps the description/payee/category fallback. */}
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium leading-tight">
-              {row.description || row.payee || row.category?.name || "Sin descripción"}
-            </p>
-            <p className="truncate text-xs text-muted-foreground">
-              <span className="tabular-nums">
-                {formatDate(row.occurred_at, "HH:mm")}
-              </span>
-              {row.payee && row.description ? (
-                <>
-                  <span aria-hidden> · </span>
-                  {row.payee}
-                </>
-              ) : null}
-              {row.category ? (
-                <>
-                  <span aria-hidden> · </span>
-                  {row.category.name}
-                </>
-              ) : !row.payee && !row.description ? (
-                <>
-                  <span aria-hidden> · </span>
-                  {row.wallet.name}
-                </>
-              ) : null}
-            </p>
+            {isTransfer ? (
+              <>
+                <p className="truncate text-sm font-medium leading-tight">
+                  {row.counterpartWallet
+                    ? `${
+                        isOutgoing
+                          ? t.transaction.transferTo
+                          : t.transaction.transferFrom
+                      } ${row.counterpartWallet.name}`
+                    : t.transaction.transfer}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  <span className="tabular-nums">
+                    {formatDate(row.occurred_at, "HH:mm")}
+                  </span>
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="truncate text-sm font-medium leading-tight">
+                  {row.description || row.payee || row.category?.name || "Sin descripción"}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  <span className="tabular-nums">
+                    {formatDate(row.occurred_at, "HH:mm")}
+                  </span>
+                  {row.payee && row.description ? (
+                    <>
+                      <span aria-hidden> · </span>
+                      {row.payee}
+                    </>
+                  ) : null}
+                  {row.category ? (
+                    <>
+                      <span aria-hidden> · </span>
+                      {row.category.name}
+                    </>
+                  ) : !row.payee && !row.description ? (
+                    <>
+                      <span aria-hidden> · </span>
+                      {row.wallet.name}
+                    </>
+                  ) : null}
+                </p>
+              </>
+            )}
           </div>
 
           {/* Amount + wallet badge */}
@@ -177,10 +221,22 @@ export function TransactionRow({ row, className }: TransactionRowProps) {
             <p
               className={cn(
                 "font-heading text-base font-semibold tabular-nums leading-tight",
-                isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-destructive",
+                isTransfer
+                  ? "inline-flex items-center gap-1 text-foreground"
+                  : isIncome
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-destructive",
               )}
             >
-              {isIncome ? "+" : "-"}
+              {isTransfer ? (
+                isOutgoing ? (
+                  <ArrowUp aria-hidden className="size-3.5" weight="bold" />
+                ) : (
+                  <ArrowDown aria-hidden className="size-3.5" weight="bold" />
+                )
+              ) : (
+                <>{isIncome ? "+" : "-"}</>
+              )}
               {formatCurrency(Number(row.amount), row.wallet.currency)}
             </p>
             <span

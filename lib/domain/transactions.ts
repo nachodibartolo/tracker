@@ -21,6 +21,7 @@ type TypedClient = SupabaseClient<Database>;
 export type TransactionWithRefs = Transaction & {
   wallet: Pick<Wallet, "id" | "name" | "currency" | "color" | "icon">;
   category: Pick<Category, "id" | "name" | "color" | "icon"> | null;
+  counterpartWallet: Pick<Wallet, "id" | "name"> | null;
 };
 
 export interface ListTransactionsFilters {
@@ -45,7 +46,8 @@ const PAGE_SIZE = 50;
 const TX_SELECT = `
   *,
   wallet:wallets!transactions_wallet_id_fkey ( id, name, currency, color, icon ),
-  category:categories!transactions_category_id_fkey ( id, name, color, icon )
+  category:categories!transactions_category_id_fkey ( id, name, color, icon ),
+  counterpartWallet:wallets!transactions_counterpart_wallet_id_fkey ( id, name )
 `;
 
 /**

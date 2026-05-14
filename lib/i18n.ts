@@ -39,6 +39,8 @@ export const t = {
     expense: "Gasto",
     income: "Ingreso",
     transfer: "Transferencia",
+    transferTo: "Transferencia a",
+    transferFrom: "Transferencia desde",
     amount: "Monto",
     wallet: "Wallet",
     category: "Categoría",
