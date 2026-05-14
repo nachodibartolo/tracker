@@ -153,7 +153,7 @@ function EmptyShell() {
           </h1>
         </div>
         <EmptyState
-          icon={ArrowsLeftRight}
+          icon={<ArrowsLeftRight weight="duotone" />}
           title="Conectá Supabase"
           description="Necesitamos conectar Supabase para listar transferencias."
         />

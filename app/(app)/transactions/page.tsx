@@ -177,7 +177,7 @@ function EmptyShell() {
           </h1>
         </div>
         <EmptyState
-          icon={Receipt}
+          icon={<Receipt weight="duotone" />}
           title="Conectá Supabase"
           description="Necesitamos conectar Supabase para listar transacciones."
         />

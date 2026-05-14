@@ -9,7 +9,7 @@ export default function WalletNotFound() {
   return (
     <div className="container mx-auto max-w-3xl px-4 py-12">
       <EmptyState
-        icon={Wallet}
+        icon={<Wallet weight="duotone" />}
         title="Wallet no encontrada"
         description="Puede que la hayas eliminado o que el link esté roto."
         action={

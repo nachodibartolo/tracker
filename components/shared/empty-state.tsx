@@ -1,12 +1,15 @@
 "use client";
 
-import type { Icon } from "@phosphor-icons/react";
-
 import { cn } from "@/lib/utils";
 
 interface EmptyStateProps {
-  /** Phosphor icon component (typed via the main icon type). */
-  icon?: Icon;
+  /**
+   * Rendered icon element (e.g. `<Wallet weight="duotone" />`). Accepted as
+   * `ReactNode` rather than a component so Server Components can pass
+   * Phosphor icons without tripping RSC serialization (forwardRef objects
+   * aren't serializable across the Server → Client boundary).
+   */
+  icon?: React.ReactNode;
   title: string;
   description?: string;
   /** Usually a `<Button>` or `<Link>` styled as a CTA. */
@@ -22,7 +25,7 @@ interface EmptyStateProps {
  * The icon is rendered with `aria-hidden` (the text below carries meaning).
  */
 export function EmptyState({
-  icon: IconCmp,
+  icon,
   title,
   description,
   action,
@@ -35,12 +38,12 @@ export function EmptyState({
         className,
       )}
     >
-      {IconCmp ? (
+      {icon ? (
         <span
           aria-hidden
-          className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground"
+          className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground [&_svg]:size-6"
         >
-          <IconCmp className="size-6" weight="duotone" />
+          {icon}
         </span>
       ) : null}
       <div className="space-y-1">

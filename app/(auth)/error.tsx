@@ -27,7 +27,7 @@ export default function AuthError({
 
   return (
     <EmptyState
-      icon={Warning}
+      icon={<Warning weight="duotone" />}
       title={t.common.error}
       description={
         error.message ||

@@ -30,7 +30,7 @@ export default function AppError({
   return (
     <div className="container mx-auto max-w-3xl px-4 py-12">
       <EmptyState
-        icon={Warning}
+        icon={<Warning weight="duotone" />}
         title={t.common.error}
         description={
           error.message ||
