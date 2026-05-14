@@ -21,6 +21,10 @@ export type CategoryType = "expense" | "income";
 
 export type TxType = "expense" | "income" | "transfer";
 
+// Wave 4A: transfers store two rows per transfer; this column distinguishes
+// the outgoing and incoming legs (null for non-transfer rows).
+export type TransferDirection = "out" | "in";
+
 export type TxSource =
   | "manual"
   | "telegram_text"
@@ -153,6 +157,7 @@ export interface Database {
           payee: string | null;
           photo_path: string | null;
           transfer_group_id: string | null;
+          transfer_direction: TransferDirection | null;
           counterpart_wallet_id: string | null;
           counterpart_amount: number | null;
           counterpart_currency: string | null;
@@ -176,6 +181,7 @@ export interface Database {
           payee?: string | null;
           photo_path?: string | null;
           transfer_group_id?: string | null;
+          transfer_direction?: TransferDirection | null;
           counterpart_wallet_id?: string | null;
           counterpart_amount?: number | null;
           counterpart_currency?: string | null;
@@ -199,6 +205,7 @@ export interface Database {
           payee?: string | null;
           photo_path?: string | null;
           transfer_group_id?: string | null;
+          transfer_direction?: TransferDirection | null;
           counterpart_wallet_id?: string | null;
           counterpart_amount?: number | null;
           counterpart_currency?: string | null;

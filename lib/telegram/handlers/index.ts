@@ -20,8 +20,12 @@ import type { Bot } from "grammy";
 
 import { getLinkedUser } from "@/lib/telegram/get-linked-user";
 
+import { registerConfirmHandler } from "./confirm";
+import { registerPhotoHandler } from "./photo";
 import { registerStartHandler } from "./start";
 import { registerStatusHandlers } from "./status";
+import { registerTextHandler } from "./text";
+import { registerVoiceHandler } from "./voice";
 
 const ONBOARDING_TEXT =
   "Necesitás vincular tu cuenta primero. Andá a la app, generá un código en Ajustes → Telegram y mandámelo con `/start <codigo>`.";
@@ -43,6 +47,19 @@ export function registerHandlers(bot: Bot): void {
   registerStatusHandlers(bot);
 
   // --- Wave 4C splice point (insert AI handlers HERE, above catch-all) ---
+  //
+  // Order matters:
+  //   - confirm FIRST so callback_query updates don't fall through to the
+  //     catch-all's `["message", "callback_query"]` filter.
+  //   - photo / voice BEFORE text because grammY matches first-listener-
+  //     wins per filter; we want media handlers to claim media updates so
+  //     the text handler never sees their captions.
+  //   - text LAST among the new handlers — it short-circuits on commands so
+  //     /start, /saldo, /ultimos still reach the command handlers above.
+  registerConfirmHandler(bot);
+  registerPhotoHandler(bot);
+  registerVoiceHandler(bot);
+  registerTextHandler(bot);
 
   // --- Catch-all (KEEP LAST) ---
   registerCatchAll(bot);

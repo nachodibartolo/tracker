@@ -48,7 +48,7 @@ export async function getWalletsWithBalance(
   const ids = wallets.map((w) => w.id);
   const { data: txs, error: txsError } = await supabase
     .from("transactions")
-    .select("wallet_id, type, amount")
+    .select("wallet_id, type, amount, transfer_direction")
     .eq("user_id", userId)
     .in("wallet_id", ids);
   if (txsError) throw txsError;
@@ -60,8 +60,16 @@ export async function getWalletsWithBalance(
       deltas.set(t.wallet_id, current + Number(t.amount));
     } else if (t.type === "expense") {
       deltas.set(t.wallet_id, current - Number(t.amount));
+    } else if (t.type === "transfer") {
+      // Wave 4A — distinguish legs by `transfer_direction`. Each row holds a
+      // positive amount; the direction decides the sign.
+      const direction = (t as { transfer_direction?: string | null }).transfer_direction;
+      if (direction === "in") {
+        deltas.set(t.wallet_id, current + Number(t.amount));
+      } else if (direction === "out") {
+        deltas.set(t.wallet_id, current - Number(t.amount));
+      }
     }
-    // 'transfer' rows are intentionally skipped — Wave 4A wires those.
   }
 
   return wallets.map((wallet) => ({
@@ -90,16 +98,22 @@ export async function getWalletById(
 
   const { data: txs, error: txsError } = await supabase
     .from("transactions")
-    .select("type, amount")
+    .select("type, amount, transfer_direction")
     .eq("wallet_id", id)
     .eq("user_id", userId);
   if (txsError) throw txsError;
 
   let delta = 0;
   for (const t of txs ?? []) {
-    if (t.type === "income") delta += Number(t.amount);
-    else if (t.type === "expense") delta -= Number(t.amount);
-    // 'transfer' rows ignored — Wave 4A.
+    if (t.type === "income") {
+      delta += Number(t.amount);
+    } else if (t.type === "expense") {
+      delta -= Number(t.amount);
+    } else if (t.type === "transfer") {
+      const direction = (t as { transfer_direction?: string | null }).transfer_direction;
+      if (direction === "in") delta += Number(t.amount);
+      else if (direction === "out") delta -= Number(t.amount);
+    }
   }
 
   return {
