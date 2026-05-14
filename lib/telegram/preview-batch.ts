@@ -74,10 +74,25 @@ export function buildBatchPreview(input: BatchPreviewInput): PreviewMessage {
     lines.push(`  ${idxStr}\\. ${icon} ${dateStr} · \`${amountStr}\` · ${payee} · ${catLabel}${suffix}`);
 
     if (!it.excluded) {
-      if (it.is_duplicate) dups++;
-      else nuevos++;
-      if (it.counterpart_wallet_name) transfers++;
-      else if (it.item.amount !== null) {
+      // Disjoint counters: dups vs transfers vs nuevos. Transfer bucket
+      // covers both AI-hinted (🔄) and user-marked (🔁) items.
+      if (it.is_duplicate) {
+        dups++;
+      } else if (it.transfer_hint || it.counterpart_wallet_name) {
+        transfers++;
+      } else {
+        nuevos++;
+      }
+      // Totals: items that will persist as real expense/income. Skip dups
+      // (they'll be skipped on confirm) and skip counterpart-marked items
+      // (those persist as transfer pairs, no net wealth change). Hint-only
+      // items DO contribute because without a counterpart they fall back
+      // to plain expense/income persistence.
+      if (
+        !it.is_duplicate &&
+        !it.counterpart_wallet_name &&
+        it.item.amount !== null
+      ) {
         if (it.item.type === "expense") totalExpense += it.item.amount;
         if (it.item.type === "income") totalIncome += it.item.amount;
       }
