@@ -1,12 +1,13 @@
 import { google } from "@ai-sdk/google";
 
 /**
- * Gemma 4 (26B MoE, 4B active) via the Gemini API. Text + image only; the
- * hosted Gemma variants do not support audio. Free tier is 1500 RPD.
+ * Gemini 2.5 Flash. Lower TTFB and better tool-calling than the Gemma
+ * variant we used initially; same free tier (15 RPM, 1500 RPD). Text +
+ * image; audio is not used by the Telegram pipeline today.
  *
  * Reads `GOOGLE_GENERATIVE_AI_API_KEY` from env automatically.
  */
-export const gemma4 = google("gemma-4-26b-a4b-it");
+export const agentModel = google("gemini-2.5-flash");
 
 export function requireGoogleAi(): void {
   if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {

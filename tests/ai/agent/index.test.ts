@@ -14,7 +14,7 @@ vi.mock("ai", async () => {
 });
 
 vi.mock("@/lib/ai/agent/provider", () => ({
-  gemma4: {} as never,
+  agentModel: {} as never,
   requireGoogleAi: vi.fn(),
 }));
 

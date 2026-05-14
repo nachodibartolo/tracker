@@ -5,7 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "@/lib/supabase/database.types";
 
-import { gemma4, requireGoogleAi } from "./provider";
+import { agentModel, requireGoogleAi } from "./provider";
 import { buildSystemPrompt, currentDateContext } from "./prompts";
 import { buildTools } from "./tools";
 
@@ -65,7 +65,7 @@ export async function runExpenseAgent(
   const startedAt = Date.now();
   try {
     const result = await generateText({
-      model: gemma4,
+      model: agentModel,
       system,
       messages: [{ role: "user", content: userParts }],
       tools,
