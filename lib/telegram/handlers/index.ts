@@ -35,8 +35,9 @@ const ONBOARDING_TEXT =
 const HELP_TEXT =
   "Comandos disponibles:\n" +
   "/saldo — ver el balance de tus wallets\n" +
-  "/ultimos — ver tus últimas transacciones\n\n" +
-  "Próximamente vas a poder mandarme un texto, una foto del recibo o un audio para registrar gastos.";
+  "/ultimos — ver tus últimas transacciones\n" +
+  "/deshacer — revertir la última acción del bot\n\n" +
+  "También podés mandarme texto (\"gasté 200 en café\") o una foto de un ticket / homebanking / billetera para que registre los movimientos automáticamente.";
 
 /**
  * Registers every handler on the supplied bot. Idempotent at the bot level
