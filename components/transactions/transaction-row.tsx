@@ -121,7 +121,13 @@ export function TransactionRow({ row, className }: TransactionRowProps) {
         <Link
           href={`/transactions/${row.id}`}
           className="flex min-w-0 flex-1 items-center gap-3 outline-none"
-          aria-label={`Editar ${row.description ?? row.payee ?? "transacción"}`}
+          aria-label={
+            isTransfer
+              ? row.counterpartWallet
+                ? `${isOutgoing ? t.transaction.transferTo : t.transaction.transferFrom} ${row.counterpartWallet.name}`
+                : t.transaction.transfer
+              : `Editar ${row.description ?? row.payee ?? "transacción"}`
+          }
           onPointerDown={startLongPress}
           onPointerUp={cancelLongPress}
           onPointerLeave={cancelLongPress}
