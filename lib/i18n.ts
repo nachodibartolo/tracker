@@ -35,6 +35,7 @@ export const t = {
   transaction: {
     new: "Nueva transacción",
     edit: "Editar transacción",
+    editCategory: "Editar categoría",
     expense: "Gasto",
     income: "Ingreso",
     transfer: "Transferencia",
@@ -128,6 +129,7 @@ export const t = {
   },
   common: {
     loading: "Cargando…",
+    saving: "Guardando…",
     empty: "Nada por aquí todavía",
     error: "Ocurrió un error",
     saved: "Guardado",
