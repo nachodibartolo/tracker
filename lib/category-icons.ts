@@ -1,5 +1,6 @@
 import {
   Airplane,
+  BeerStein,
   BookOpen,
   Briefcase,
   Bus,
@@ -15,8 +16,10 @@ import {
   Laptop,
   Plug,
   ShoppingBag,
+  ShoppingCart,
   SoccerBall,
   Sparkle,
+  Storefront,
   Tag,
   TrendUp,
 } from "@phosphor-icons/react/dist/ssr";
@@ -26,6 +29,9 @@ export const CATEGORY_ICONS: readonly { name: string; component: Icon }[] = [
   { name: "fork-knife", component: ForkKnife },
   { name: "hamburger", component: Hamburger },
   { name: "coffee", component: Coffee },
+  { name: "beer-stein", component: BeerStein },
+  { name: "storefront", component: Storefront },
+  { name: "shopping-cart", component: ShoppingCart },
   { name: "car", component: Car },
   { name: "bus", component: Bus },
   { name: "plug", component: Plug },

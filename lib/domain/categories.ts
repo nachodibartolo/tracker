@@ -17,6 +17,8 @@ export interface FlatCategoryOption {
   id: string;
   /** Display label, with parent prefix for sub-categories (e.g. "Comida › Almuerzo"). */
   label: string;
+  /** Raw category name (no parent prefix). Used to render hierarchical pickers. */
+  name: string;
   /** Always the leaf-row's color (used for swatches in selects). */
   color: string;
   /** Always the leaf-row's icon name. */
@@ -83,6 +85,7 @@ export async function getFlatCategoryOptions(
     out.push({
       id: top.id,
       label: top.name,
+      name: top.name,
       color: top.color,
       icon: top.icon,
       parent_id: null,
@@ -92,6 +95,7 @@ export async function getFlatCategoryOptions(
       out.push({
         id: child.id,
         label: `${top.name} › ${child.name}`,
+        name: child.name,
         color: child.color,
         icon: child.icon,
         parent_id: top.id,

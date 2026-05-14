@@ -38,7 +38,8 @@ const TX_TYPES = ["expense", "income"] as const;
 
 const formSchema = z.object({
   wallet_id: z.string().uuid("Wallet inválida"),
-  category_id: z.string().uuid().nullable(),
+  parent_category_id: z.string().uuid().nullable(),
+  subcategory_id: z.string().uuid().nullable(),
   type: z.enum(TX_TYPES),
   amount: z
     .number({ message: "Monto inválido" })
@@ -101,9 +102,21 @@ export function TransactionForm({
 
   const defaultValues: FormValues = React.useMemo(() => {
     if (mode === "edit" && transaction) {
+      const allCats = [
+        ...categoryOptions.expense,
+        ...categoryOptions.income,
+      ];
+      const initialCat = transaction.category_id
+        ? allCats.find((c) => c.id === transaction.category_id)
+        : null;
+      const parent_category_id = initialCat
+        ? initialCat.parent_id ?? initialCat.id
+        : null;
+      const subcategory_id = initialCat?.parent_id ? initialCat.id : null;
       return {
         wallet_id: transaction.wallet_id,
-        category_id: transaction.category_id,
+        parent_category_id,
+        subcategory_id,
         type: transaction.type === "transfer" ? "expense" : transaction.type,
         amount: Number(transaction.amount),
         occurred_at: new Date(transaction.occurred_at).toISOString(),
@@ -115,7 +128,8 @@ export function TransactionForm({
     }
     return {
       wallet_id: wallets[0]?.id ?? "",
-      category_id: null,
+      parent_category_id: null,
+      subcategory_id: null,
       type: "expense",
       amount: 0,
       occurred_at: new Date().toISOString(),
@@ -124,7 +138,7 @@ export function TransactionForm({
       note: null,
       photo_path: null,
     };
-  }, [mode, transaction, wallets]);
+  }, [mode, transaction, wallets, categoryOptions]);
 
   const {
     control,
@@ -143,6 +157,7 @@ export function TransactionForm({
   const selectedType = watch("type");
   const selectedWalletId = watch("wallet_id");
   const selectedOccurredAt = watch("occurred_at");
+  const selectedParentCategoryId = watch("parent_category_id");
 
   const selectedWallet = React.useMemo(
     () => wallets.find((w) => w.id === selectedWalletId),
@@ -151,32 +166,86 @@ export function TransactionForm({
 
   const categories = categoryOptions[selectedType];
 
-  // Reset the chosen category when the type tab flips to one whose options
-  // don't include the current category.
+  // Build a 2-level tree from the flat list so we can render cascading
+  // parent → sub-category selects. Rebuilt on each `categories` change.
+  const { topLevelCategories, childrenByParent } = React.useMemo(() => {
+    const top: FlatCategoryOption[] = [];
+    const childMap = new Map<string, FlatCategoryOption[]>();
+    for (const c of categories) {
+      if (c.parent_id === null) {
+        top.push(c);
+      } else {
+        const list = childMap.get(c.parent_id) ?? [];
+        list.push(c);
+        childMap.set(c.parent_id, list);
+      }
+    }
+    return { topLevelCategories: top, childrenByParent: childMap };
+  }, [categories]);
+
+  const subcategoryOptions = selectedParentCategoryId
+    ? childrenByParent.get(selectedParentCategoryId) ?? []
+    : [];
+
+  // Reset parent + sub when the type tab flips to one whose options don't
+  // include the current parent.
   React.useEffect(() => {
-    const current = watch("category_id");
-    if (!current) return;
-    const stillValid = categories.some((c) => c.id === current);
+    const currentParent = watch("parent_category_id");
+    if (!currentParent) return;
+    const stillValid = topLevelCategories.some((c) => c.id === currentParent);
     if (!stillValid) {
-      setValue("category_id", null, { shouldDirty: false });
+      setValue("parent_category_id", null, { shouldDirty: false });
+      setValue("subcategory_id", null, { shouldDirty: false });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedType, categories]);
+  }, [selectedType, topLevelCategories]);
+
+  // When the parent changes, clear the sub-category if it no longer fits.
+  React.useEffect(() => {
+    const currentSub = watch("subcategory_id");
+    if (!currentSub) return;
+    const stillValid = subcategoryOptions.some((c) => c.id === currentSub);
+    if (!stillValid) {
+      setValue("subcategory_id", null, { shouldDirty: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedParentCategoryId, subcategoryOptions]);
 
   const dateChip: DateChip = React.useMemo(() => {
     if (!selectedOccurredAt) return "custom";
     return classifyDate(selectedOccurredAt);
   }, [selectedOccurredAt]);
 
+  const timeValue = React.useMemo(
+    () => extractTimeHHMM(selectedOccurredAt),
+    [selectedOccurredAt],
+  );
+
   function setDayChip(chip: DateChip) {
-    if (chip === "today") {
-      setValue("occurred_at", new Date().toISOString(), { shouldDirty: true });
-    } else if (chip === "yesterday") {
-      const d = new Date();
-      d.setDate(d.getDate() - 1);
-      setValue("occurred_at", d.toISOString(), { shouldDirty: true });
+    // Preserve the time-of-day from the current form value so flipping date
+    // chips doesn't clobber the hour the user already set.
+    const base = selectedOccurredAt ? new Date(selectedOccurredAt) : new Date();
+    const next = new Date();
+    if (chip === "yesterday") {
+      next.setDate(next.getDate() - 1);
     }
+    next.setHours(base.getHours(), base.getMinutes(), 0, 0);
+    setValue("occurred_at", next.toISOString(), { shouldDirty: true });
     // 'custom' is set via the calendar popover.
+  }
+
+  function handleTimeChange(value: string) {
+    // <input type="time"> emits "HH:mm" (or empty). Persist into occurred_at
+    // preserving the existing date portion.
+    const parts = value.split(":");
+    if (parts.length !== 2) return;
+    const hh = Number(parts[0]);
+    const mm = Number(parts[1]);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return;
+    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return;
+    const base = selectedOccurredAt ? new Date(selectedOccurredAt) : new Date();
+    base.setHours(hh, mm, 0, 0);
+    setValue("occurred_at", base.toISOString(), { shouldDirty: true });
   }
 
   function submit(values: FormValues) {
@@ -185,9 +254,14 @@ export function TransactionForm({
       return;
     }
 
+    // Resolve the category: prefer the sub-category leaf if one is picked,
+    // else fall back to the parent (= top-level category), else null.
+    const resolvedCategoryId =
+      values.subcategory_id ?? values.parent_category_id ?? null;
+
     const payload = {
       wallet_id: values.wallet_id,
-      category_id: values.category_id,
+      category_id: resolvedCategoryId,
       type: values.type,
       amount: values.amount,
       occurred_at: values.occurred_at,
@@ -276,7 +350,25 @@ export function TransactionForm({
                 onValueChange={(v) => field.onChange(v)}
               >
                 <SelectTrigger id="tx-wallet" className="w-full">
-                  <SelectValue placeholder="Elegí una wallet" />
+                  <SelectValue placeholder="Elegí una wallet">
+                    {(value) => {
+                      const w = wallets.find((x) => x.id === value);
+                      if (!w) return null;
+                      return (
+                        <span className="flex items-center gap-1.5">
+                          <span
+                            aria-hidden
+                            className="inline-block size-2 rounded-full"
+                            style={{ backgroundColor: w.color }}
+                          />
+                          <span className="truncate">{w.name}</span>
+                          <span className="font-mono text-xs text-muted-foreground">
+                            {w.currency}
+                          </span>
+                        </span>
+                      );
+                    }}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {wallets.map((w) => (
@@ -299,12 +391,12 @@ export function TransactionForm({
         )}
       </div>
 
-      {/* Category */}
+      {/* Category (parent) */}
       <div className="space-y-2">
         <Label htmlFor="tx-category">{t.transaction.category}</Label>
         <Controller
           control={control}
-          name="category_id"
+          name="parent_category_id"
           render={({ field }) => (
             <Select
               value={field.value ?? NO_CATEGORY}
@@ -313,18 +405,34 @@ export function TransactionForm({
               }
             >
               <SelectTrigger id="tx-category" className="w-full">
-                <SelectValue placeholder="Sin categoría" />
+                <SelectValue placeholder="Sin categoría">
+                  {(value) => {
+                    if (!value || value === NO_CATEGORY) return null;
+                    const c = topLevelCategories.find((x) => x.id === value);
+                    if (!c) return null;
+                    return (
+                      <span className="flex items-center gap-1.5">
+                        <span
+                          aria-hidden
+                          className="inline-block size-2 rounded-full"
+                          style={{ backgroundColor: c.color }}
+                        />
+                        <span className="truncate">{c.name}</span>
+                      </span>
+                    );
+                  }}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={NO_CATEGORY}>Sin categoría</SelectItem>
-                {categories.map((c) => (
+                {topLevelCategories.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     <span
                       aria-hidden
                       className="inline-block size-2 rounded-full"
                       style={{ backgroundColor: c.color }}
                     />
-                    <span className="truncate">{c.label}</span>
+                    <span className="truncate">{c.name}</span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -332,6 +440,58 @@ export function TransactionForm({
           )}
         />
       </div>
+
+      {/* Subcategory — only when the chosen parent has children */}
+      {subcategoryOptions.length > 0 ? (
+        <div className="space-y-2">
+          <Label htmlFor="tx-subcategory">{t.transaction.subcategory}</Label>
+          <Controller
+            control={control}
+            name="subcategory_id"
+            render={({ field }) => (
+              <Select
+                value={field.value ?? NO_CATEGORY}
+                onValueChange={(v) =>
+                  field.onChange(v === NO_CATEGORY ? null : (v as string))
+                }
+              >
+                <SelectTrigger id="tx-subcategory" className="w-full">
+                  <SelectValue placeholder="Sin subcategoría">
+                    {(value) => {
+                      if (!value || value === NO_CATEGORY) return null;
+                      const c = subcategoryOptions.find((x) => x.id === value);
+                      if (!c) return null;
+                      return (
+                        <span className="flex items-center gap-1.5">
+                          <span
+                            aria-hidden
+                            className="inline-block size-2 rounded-full"
+                            style={{ backgroundColor: c.color }}
+                          />
+                          <span className="truncate">{c.name}</span>
+                        </span>
+                      );
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_CATEGORY}>Sin subcategoría</SelectItem>
+                  {subcategoryOptions.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      <span
+                        aria-hidden
+                        className="inline-block size-2 rounded-full"
+                        style={{ backgroundColor: c.color }}
+                      />
+                      <span className="truncate">{c.name}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          />
+        </div>
+      ) : null}
 
       {/* Date row */}
       <div className="space-y-2">
@@ -380,11 +540,9 @@ export function TransactionForm({
                     selected={field.value ? new Date(field.value) : undefined}
                     onSelect={(d) => {
                       if (!d) return;
-                      // Preserve the time portion (keeps "today" semantics
-                      // sensible if the user later flips back to chip).
                       const next = new Date(d);
-                      const now = new Date();
-                      next.setHours(now.getHours(), now.getMinutes(), 0, 0);
+                      const base = field.value ? new Date(field.value) : new Date();
+                      next.setHours(base.getHours(), base.getMinutes(), 0, 0);
                       field.onChange(next.toISOString());
                     }}
                     autoFocus
@@ -394,6 +552,18 @@ export function TransactionForm({
             )}
           />
         </div>
+      </div>
+
+      {/* Hora */}
+      <div className="space-y-2">
+        <Label htmlFor="tx-time">{t.transaction.time}</Label>
+        <Input
+          id="tx-time"
+          type="time"
+          value={timeValue}
+          onChange={(e) => handleTimeChange(e.target.value)}
+          className="w-32"
+        />
       </div>
 
       {/* Description */}
@@ -516,4 +686,13 @@ function isSameDay(a: Date, b: Date): boolean {
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate()
   );
+}
+
+function extractTimeHHMM(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 }

@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { getCategoryIcon } from "@/lib/category-icons";
 import type { TransactionWithRefs } from "@/lib/domain/transactions";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -147,9 +147,26 @@ export function TransactionRow({ row, className }: TransactionRowProps) {
               {row.description || row.payee || row.category?.name || "Sin descripción"}
             </p>
             <p className="truncate text-xs text-muted-foreground">
-              {row.payee && row.description ? row.payee : null}
-              {row.payee && row.description && row.category ? " · " : null}
-              {row.category?.name ?? (!row.payee && !row.description ? row.wallet.name : null)}
+              <span className="tabular-nums">
+                {formatDate(row.occurred_at, "HH:mm")}
+              </span>
+              {row.payee && row.description ? (
+                <>
+                  <span aria-hidden> · </span>
+                  {row.payee}
+                </>
+              ) : null}
+              {row.category ? (
+                <>
+                  <span aria-hidden> · </span>
+                  {row.category.name}
+                </>
+              ) : !row.payee && !row.description ? (
+                <>
+                  <span aria-hidden> · </span>
+                  {row.wallet.name}
+                </>
+              ) : null}
             </p>
           </div>
 
